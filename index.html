@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0b0e14" />
+    <title>EyeTrain</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center;
+        background: #0b0e14; color: #d8dee9;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        padding: 0 16px;
+      }
+      code { color: #88c0d0; }
+      .card { max-width: 560px; line-height: 1.5; }
+      h1 { font-size: 1.4rem; }
+      ul { padding-left: 1.2em; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>EyeTrain — Phase 2 scaffold</h1>
+      <p>Math core self-test (values computed live for this device):</p>
+      <ul id="selftest"><li>running…</li></ul>
+      <p>Game loops, calibration wizard, and the WebGL2 stimulus renderer arrive in Phase 3.</p>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,43 @@
+This is an excellent Phase 1 brief. The team has accurately identified the biological roadblocks and proposed the perfect tech stack.
+
+Before we move to Phase 2 (Psychophysics Math & Repo Scaffold), here are the answers to your interrogation, along with a few extra directives based on clinical research:
+
+1. Displays & Refresh:
+
+Desktop: [Insert Monitor Model/Resolution, e.g., 27" 1440p]. Refresh rate is [e.g., 144Hz, VRR disabled]. Viewing distance: [e.g., 60cm].
+
+Mobile: [Insert Phone Model, e.g., iPhone 14 Pro]. Refresh rate: [e.g., 120Hz]. Viewing distance: [e.g., 30cm].
+
+Directive for the Math Agent: Because spatial frequency must be strictly measured in cycles per degree (cpd) of visual angle, the engine must dynamically calculate Pixels Per Degree (PPD) based on these inputs.
+
+2. Calibration Tolerance:
+
+Yes, absolutely. I am 100% committed to a one-time visual gamma-calibration per device. I understand that without spatiotemporal dithering/bit-stealing, the brain will cheat using luminance artifacts. Treat this as a clinical device first, game second.
+
+3. Clinical Baseline:
+
+My amblyopia is purely refractive due to the high anisometropia (-15 vs -2.5). There is no strabismus and no eccentric fixation.
+
+Current best-corrected acuity in the right eye is [Insert Acuity, e.g., 20/200 or 1.0 logMAR].
+
+Stereopsis baseline: I have essentially zero stereopsis under normal binocular viewing due to deep suppression, though I can sometimes force alternating fixation.
+
+4. Dosage & Supervision:
+
+I will commit to 30–45 minutes of training per day, 5 days a week.
+
+I have an optometrist who will formally measure my acuity and stereopsis every 6 weeks. Therefore, the IndexedDB logging is mission-critical. The UI must have a dashboard where I can export or show my psychophysics staircase graphs to my doctor.
+
+5. Deployment Details:
+
+GitHub: Initialize the public repo as eyetrain-pwa under my account (rasuldeb25).
+
+Oracle Server: We will set up Docker and Nginx from scratch using standard DevOps practices. But it is later, for now we run it and test it locally
+
+Additional Directives for Phase 2:
+
+The Cardboard Septum: I love the Vision Scientist's B1 workaround. We will build the split-screen free-fusion renderer. Include adjustable nonius lines (fusion locks) so I can ensure my eyes are properly aligned before the game loop starts.
+
+Lateral Masking Accuracy: For the "Flanker Run" game, ensure the math governing the target-flanker spacing strictly adheres to Uri Polat's lateral-masking psychophysical models (e.g., specific wavelength spacing for facilitation vs. crowding).
+
+We are cleared for Phase 2. Please generate the mathematical foundations, the exact calibration procedure I will need to perform, and the initial terminal commands/scaffold to get the GitHub repo and Vite environment running.

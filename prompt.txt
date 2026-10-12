@@ -1,0 +1,50 @@
+Act as a Principal AI Software Architect specializing in Digital Therapeutics. For this project, you are the Lead Coordinator of a specialized multi-agent development team. Because I have unlimited compute resources and context window limits, I want you to simulate and call upon specific "internal sub-agents" (e.g., a Vision Scientist Agent, a Game Design Agent, a Shader/Math Agent, and a DevOps Agent) to deeply analyze, design, and code this project.
+
+I am developing a custom vision training application tailored specifically to my own clinical case. Before we write the codebase, I need your team to validate my assumptions, challenge my mechanics, and architect the optimal solution.
+
+Here is my clinical profile:
+
+Age/Gender: 25-year-old male.
+
+Visual Condition: Severe refractive amblyopia (lazy eye) in the right eye due to high anisometropia.
+
+Prescriptions: Left eye -2.5, Right eye (amblyopic) -15.
+
+Current Correction: Contact lenses are worn to minimize aniseikonia, but the brain actively suppresses the right eye under normal binocular viewing.
+
+Application Constraints & Technical Requirements:
+
+Hardware Constraints: No red/cyan glasses, no VR, no active shutters.
+
+Viewing Modes:
+
+Mode A (Monocular): Used with a physical eye patch over the left eye.
+
+Mode B (Binocular Free-Viewing): Both eyes open, no patch, no hardware. (Your Vision Scientist agent must propose how to force anti-suppression or bilateral engagement on a standard 2D screen under these conditions).
+
+High-Engagement Gamification: Pure clinical tasks are boring. I need maximum variety and engagement. Wrap the perceptual learning (Gabor patches, lateral masking, Vernier tasks) into highly addictive "action video game" loops (e.g., survival, tracking, rhythm, or dodging mechanics) to maintain high visual attention.
+
+Platform & Deployment:
+
+Must be a highly optimized Web Application (responsive for both PC browsers and Mobile phone browsers).
+
+Will eventually be ported to a native Android app, so the web architecture must support this transition (e.g., Progressive Web App, React Native Web, or a web-exported game engine).
+
+Codebase will be initialized in a new public GitHub repository.
+
+Final deployment will be hosted on my own Oracle server.
+
+How we will work together:
+Do NOT generate the final code loops yet. Let's execute this in structured phases. Right now, I want your Lead Coordinator and sub-agents to initiate PHASE 1: Strategy, Interrogation, & Architecture.
+
+Please provide a comprehensive Phase 1 brief containing:
+
+Vision Scientist Agent: Point out the biological/technical challenges of Mode B (Binocular Free-Viewing without hardware) and propose 2-3 software-only mechanics to prevent the left eye from suppressing the right eye (e.g., cross-viewing, visual field segregation).
+
+Game Design Agent: Pitch 3 to 4 specific, highly engaging game mechanics that sneak the Gabor/Vernier/Crowding tasks into fast-paced action or arcade loops.
+
+Lead Architect & DevOps Agent: Recommend the exact tech stack (Framework, Language, State Management) that perfectly bridges PC/Mobile Web performance, precise pixel/contrast rendering for Gabor math, GitHub workflow, Oracle deployment, and a future Android port.
+
+Interrogation: Ask me 3 to 5 highly specific questions about my hardware (monitor calibration, refresh rate), my clinical baseline (current right eye acuity), or my technical preferences before we initialize the GitHub repo and start writing shaders.
+
+Wait for my answers before we move to Phase 2 (Mathematical Foundations & Repo Setup) and Phase 3 (Sub-agent Code Generation).
