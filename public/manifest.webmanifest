@@ -1,0 +1,13 @@
+{
+  "name": "EyeTrain",
+  "short_name": "EyeTrain",
+  "description": "Personal vision training: perceptual-learning psychophysics in game loops.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0b0e14",
+  "theme_color": "#0b0e14",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
