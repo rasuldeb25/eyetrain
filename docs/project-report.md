@@ -10,6 +10,35 @@
 > structure, frame-timing fidelity monitor — implemented and verified in a live Chrome
 > session. Sections 6–8 are annotated where this changes them.
 
+### Status at a glance (end of 2026-10-15)
+
+**Stage: Phase 4 slice 5 of the merged track complete — the app is in daily clinical use
+on the owner's laptop.** Everything needed for the N-of-1 protocol exists and is verified:
+calibration, two psychophysical games (contrast at controlled eccentricity; lateral masking
+/ crowding), block-permuted interleaved staircases with convergence-tuned steps, brief
+raised-cosine presentations, dosage/fatigue ergonomics, meta-progression and juice,
+Weibull psychometrics with CIs, the one-page optometrist report, JSON backup/restore, an
+experimental binocular mode (B2 flicker), and a session scheduler. Cumulative: 106 unit
+tests, CI green, every slice verified live in Chrome.
+
+**Done vs. the Phase 1 vision (roughly two-thirds):**
+
+| Area | Status |
+|---|---|
+| Mode A clinical core (contrast, crowding, calibration, staircases, psychometrics, report) | complete |
+| Engagement layer (progression, juice, waves, scheduler, onboarding) | complete for 2 games |
+| Games | 2 of 4 (Beat Align / Vernier and Swarm Keeper / MOT not built) |
+| Mode B (binocular) | B2 flicker shipped (experimental); B1 split-field not built — gated on a manual free-fusion feasibility test by the owner |
+| Data safety | JSON backup/restore shipped; no sync service yet |
+| Deployment / platform | local dev server only — no PWA service worker, no Docker/nginx on Oracle, no Capacitor/Android |
+| Clinical validation | none yet — first 6-week optometrist re-measurement pending |
+
+**Suggested definition of "v1.0 finished":** the current build + PWA service worker
+(installable, offline) + a documented weekly backup habit or the sync service + one full
+6-week cycle with the optometrist's independent acuity/stereopsis measurement alongside the
+report. The remaining games, B1 and Android are v1.x scope — valuable, but not required for
+the training to be clinically useful today.
+
 This document is self-contained: it gives a reviewing agent (or human) everything needed to
 critique the project without reading the codebase first. Sections 7–9 are the honest
 self-critique and the open questions we want challenged — **especially the engagement/game-feel
