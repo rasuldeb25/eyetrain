@@ -13,6 +13,7 @@
  */
 
 import { buildProgram } from "./gl";
+import { debugLevel } from "../debug";
 
 export interface GaborParams {
   /** Patch center in device px, origin top-left of canvas. */
@@ -94,6 +95,11 @@ export class GaborRenderer {
   private readonly gaborB = new Float32Array(4 * MAX_GABORS);
   private gamma: number;
   private frame = 0;
+  /** Patch count of the previous draw — debug logs fire when the composition changes. */
+  private lastCount = -1;
+  /** Highest-contrast frame of the current scene, logged when the scene ends (envelope peak). */
+  private peakC = -1;
+  private peakDesc = "";
 
   constructor(canvas: HTMLCanvasElement, gamma: number) {
     this.canvas = canvas;
@@ -157,7 +163,14 @@ export class GaborRenderer {
     gl.clearColor(bg, bg, bg, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    if (gabors.length === 0) return;
+    if (gabors.length === 0) {
+      if (this.lastCount !== 0 && debugLevel() > 0) {
+        this.flushPeakLog();
+        console.log("[GaborRenderer] draw: blank (0 patches)");
+      }
+      this.lastCount = 0;
+      return;
+    }
     if (gabors.length > MAX_GABORS) {
       throw new RangeError(`at most ${MAX_GABORS} patches per scene`);
     }
@@ -191,9 +204,42 @@ export class GaborRenderer {
     gl.uniform2f(this.loc["uBoxCenter"]!, (minX + maxX) / 2, (minY + maxY) / 2);
     gl.uniform2f(this.loc["uBoxHalf"]!, (maxX - minX) / 2, (maxY - minY) / 2);
     gl.uniform1i(this.loc["uCount"]!, gabors.length);
+    // uGaborA[i] = (centerX, centerY, sigmaPx, cyclesPerPx); uGaborB[i] = (theta, phase,
+    // contrast, 0). The shader sums contrast·envelope·carrier over ALL uCount patches in
+    // linear luminance, then encodes + dithers once — strictly additive, no overwriting.
     gl.uniform4fv(this.loc["uGaborA[0]"]!, this.gaborA, 0, 4 * gabors.length);
     gl.uniform4fv(this.loc["uGaborB[0]"]!, this.gaborB, 0, 4 * gabors.length);
+    const dbg = debugLevel();
+    if (dbg > 0) {
+      const desc = gabors
+        .map((g, i) => `#${i} C=${g.contrast.toFixed(4)} @(${g.xPx.toFixed(0)},${g.yPx.toFixed(0)})`)
+        .join("  ");
+      const line = `uCount=${gabors.length} | ${desc} | frame ${this.frame}`;
+      if (dbg === 2) {
+        console.log(`[GaborRenderer] drawArrays: ${line}`);
+      } else if (this.lastCount !== gabors.length) {
+        // Scene composition changed: report the previous scene's envelope peak, then the
+        // new scene's first (ramp-onset, hence near-zero contrast) frame.
+        this.flushPeakLog();
+        console.log(`[GaborRenderer] drawArrays (scene start, envelope≈0): ${line}`);
+      }
+      const maxC = Math.max(...gabors.map((g) => g.contrast));
+      if (maxC > this.peakC) {
+        this.peakC = maxC;
+        this.peakDesc = line;
+      }
+    }
+    this.lastCount = gabors.length;
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  /** Level-1 debug: emit the highest-contrast frame of the scene that just ended. */
+  private flushPeakLog(): void {
+    if (this.peakC >= 0) {
+      console.log(`[GaborRenderer] drawArrays (scene PEAK): ${this.peakDesc}`);
+    }
+    this.peakC = -1;
+    this.peakDesc = "";
   }
 
   dispose(): void {

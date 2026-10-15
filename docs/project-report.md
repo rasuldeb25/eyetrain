@@ -245,6 +245,18 @@ banding) → profile saved to IndexedDB.
     catch trial, which is deliberately an isolated bright target) misread as one — the
     700 ms intertrial gap vs 350 ms pulse gap made boundaries illegible; fixed by the
     legibility changes above. Note the target pulse is random, not always pulse 2.
+  - *Second escalation of the same report (2026-10-15)*: the owner asked for the state to
+    be restructured so flanker contrast/spacing are explicit trial constants and only the
+    target contrast toggles per pulse, and for mandatory GPU-side logging. Done:
+    `core/ifc.ts` is now `pulseContrasts(trial, pulse)` (tested: flanker contrast never
+    depends on pulse or target interval); the trial object stores `targetContrast`,
+    `flankerContrast`, `spacingLambda` as constants with contrast-free geometry, and the
+    loop builds each pulse's scene from them. Debug logging (`src/debug.ts`: on in dev, or
+    `localStorage eyetrain-debug = "1"|"2"`) prints `[Pulse X] Target Contrast / Flanker
+    Contrast` at each pulse onset and `[GaborRenderer] drawArrays uCount=… C=…` at scene
+    start and at the envelope peak (level 2 = every draw). A live run logged, e.g., trial 4
+    (3λ track): Pulse 1 → target 0.8955 + flankers 0.50 ×2; Pulse 2 → target 0.0000 +
+    flankers 0.50 ×2; `uCount=3` in both pulses. The flankers never drop out.
 - **Phase 4 slice 2 verification (2026-10-15)**: 42-trial session driven end-to-end (synthetic
     keys + pointer taps); waves advanced with shield depletion, recap banners and bonuses;
     bursts/pops rendered only during intertrial (screenshots confirm a blank overlay during

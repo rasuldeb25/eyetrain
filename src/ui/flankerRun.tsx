@@ -22,7 +22,8 @@ import { InterleavedStaircases } from "../core/interleave";
 import { cpdToCyclesPerPx, degToPx, isRenderable } from "../core/visualAngle";
 import { interactionZone, minSeparationLambda, separationPx } from "../core/polat";
 import { raisedCosine, STIM_TOTAL_MS } from "../core/envelope";
-import { pulseScene } from "../core/ifc";
+import { pulseContrasts } from "../core/ifc";
+import { debugLevel } from "../debug";
 import {
   dayKey,
   FATIGUE_BREAK_SECONDS,
@@ -116,18 +117,25 @@ interface LiveState {
   droppedFrames: number;
   trialLog: Omit<TrialRow, "sessionId" | "id">[];
   current: {
-    flankers: GaborParams[];
-    target: GaborParams;
+    // ---- Trial constants: fixed by the staircase track, identical in BOTH pulses ----
+    targetContrast: number;
+    /** null on the isolated track: no flankers in either pulse. */
+    flankerContrast: number | null;
+    spacingLambda: number | null;
     targetInterval: 1 | 2;
+    // ---- Contrast-free geometry; contrast is applied per pulse in the loop ----
+    targetGeom: Omit<GaborParams, "contrast">;
+    flankerGeom: Omit<GaborParams, "contrast">[];
     isCatch: boolean;
     stair: number | null;
     /** Staircased variable on this trial (contrast for tracks 0/1, spacing λ for 2). */
     value: number;
-    spacingLambda: number | null;
     tStart: number;
     answered: boolean;
     respStartedAt: number | null;
     tickedI2: boolean;
+    /** Last pulse whose onset was debug-logged (0 = none yet). */
+    loggedPulse: 0 | 1 | 2;
   } | null;
   nextTrialAt: number | null;
   startedAt: string;
@@ -219,33 +227,46 @@ export function FlankerRun() {
     }
 
     const common = { sigmaPx, cyclesPerPx, thetaRad, phaseRad: 0 };
-    const flankers: GaborParams[] = [];
+    const flankerGeom: Omit<GaborParams, "contrast">[] = [];
     if (flankerContrast !== null && spacingLambda !== null) {
       // Collinear configuration: flankers along the stripe axis, iso-oriented, iso-phase.
       const sepPx = separationPx(spacingLambda, s.cpd, s.profile);
       const ux = -Math.sin(thetaRad);
       const uy = Math.cos(thetaRad);
-      flankers.push(
-        { ...common, xPx: cx + ux * sepPx, yPx: cy + uy * sepPx, contrast: flankerContrast },
-        { ...common, xPx: cx - ux * sepPx, yPx: cy - uy * sepPx, contrast: flankerContrast },
+      flankerGeom.push(
+        { ...common, xPx: cx + ux * sepPx, yPx: cy + uy * sepPx },
+        { ...common, xPx: cx - ux * sepPx, yPx: cy - uy * sepPx },
       );
     }
+    const targetInterval: 1 | 2 = Math.random() < 0.5 ? 1 : 2;
     s.current = {
-      flankers,
-      target: { ...common, xPx: cx, yPx: cy, contrast: targetContrast },
-      targetInterval: Math.random() < 0.5 ? 1 : 2,
+      targetContrast,
+      flankerContrast,
+      spacingLambda,
+      targetInterval,
+      targetGeom: { ...common, xPx: cx, yPx: cy },
+      flankerGeom,
       isCatch,
       stair,
       value,
-      spacingLambda,
       tStart: performance.now(),
       answered: false,
       respStartedAt: null,
       tickedI2: false,
+      loggedPulse: 0,
     };
     s.nextTrialAt = null;
     setBanner(null);
     s.sfx.tick();
+    if (debugLevel() > 0) {
+      const track = isCatch ? "catch" : stair === null ? "?" : TRACK_NAMES[stair];
+      console.log(
+        `[FlankerRun] trial ${s.trialLog.length + 1} | track ${track} | target in pulse ${targetInterval} | ` +
+          `target C=${targetContrast.toFixed(4)} | flankers ${
+            flankerContrast === null ? "NONE" : `C=${flankerContrast.toFixed(2)} ×2 @ ${spacingLambda}λ`
+          }`,
+      );
+    }
   }
 
   function settleTrial(s: LiveState, correct: boolean, rtMs: number | null) {
@@ -254,8 +275,8 @@ export function FlankerRun() {
     c.answered = true;
 
     const dpr = window.devicePixelRatio || 1;
-    const fxX = c.target.xPx / dpr;
-    const fxY = c.target.yPx / dpr;
+    const fxX = c.targetGeom.xPx / dpr;
+    const fxY = c.targetGeom.yPx / dpr;
     let gained = 0;
     if (correct) {
       s.combo++;
@@ -285,22 +306,22 @@ export function FlankerRun() {
       s.stairs.stairs[c.stair]!.update(correct);
       s.scoredTrials++;
     }
-    s.xp += trialXp(c.target.contrast, correct, c.isCatch);
+    s.xp += trialXp(c.targetContrast, correct, c.isCatch);
     s.trialLog.push({
       index: s.trialLog.length,
       value: c.value,
       correct,
       rtMs,
       isCatch: c.isCatch,
-      thetaDeg: Math.round((c.target.thetaRad * 180) / Math.PI),
-      xPx: Math.round(c.target.xPx),
-      yPx: Math.round(c.target.yPx),
+      thetaDeg: Math.round((c.targetGeom.thetaRad * 180) / Math.PI),
+      xPx: Math.round(c.targetGeom.xPx),
+      yPx: Math.round(c.targetGeom.yPx),
       eccDeg: 0,
       stair: c.stair ?? undefined,
       stimMs: STIM_TOTAL_MS,
       spacingLambda: c.spacingLambda ?? undefined,
-      targetContrast: c.target.contrast,
-      flankerContrast: c.flankers[0]?.contrast,
+      targetContrast: c.targetContrast,
+      flankerContrast: c.flankerContrast ?? undefined,
       at: new Date().toISOString(),
     });
 
@@ -531,17 +552,29 @@ export function FlankerRun() {
         if (ph === "over") {
           settleTrial(st, false, null); // timeout = miss
         } else {
-          let scene: GaborParams[] = [];
+          const scene: GaborParams[] = [];
           if (ph === "i1" || ph === "i2") {
             stimOn = true;
-            const pulse = ph === "i1" ? 1 : 2;
+            const pulse: 1 | 2 = ph === "i1" ? 1 : 2;
             pulseNow = pulse;
             const env = raisedCosine(ph === "i1" ? t : t - I2_START);
-            // Flankers in BOTH pulses, target only in its own — see core/ifc (tested).
-            scene = pulseScene(c.flankers, c.target, c.targetInterval, pulse).map((g) => ({
-              ...g,
-              contrast: g.contrast * env,
-            }));
+            // 2IFC schedule (core/ifc, unit-tested): flanker contrast is the trial
+            // constant in BOTH pulses; only the target contrast toggles (0 when absent).
+            //   L = 0.5 + C_target(pulse)·E(t)·G0 + C_flank·E(t)·[G−1 + G+1]
+            const pc = pulseContrasts(c, pulse);
+            if (pc.flanker !== null) {
+              for (const g of c.flankerGeom) scene.push({ ...g, contrast: pc.flanker * env });
+            }
+            scene.push({ ...c.targetGeom, contrast: pc.target * env });
+            if (c.loggedPulse !== pulse && debugLevel() > 0) {
+              c.loggedPulse = pulse;
+              console.log(
+                `[Pulse ${pulse}] Target Contrast: ${pc.target.toFixed(4)}` +
+                  `${pc.target === 0 ? " (absent)" : ""}, Flanker Contrast: ${
+                    pc.flanker === null ? "none" : pc.flanker.toFixed(2)
+                  } ×${c.flankerGeom.length} @ ${c.spacingLambda ?? "—"}λ | envelope ramps 0→1→0 over 250 ms`,
+              );
+            }
             if (ph === "i2" && !c.tickedI2) {
               c.tickedI2 = true;
               st.sfx.tick(true); // second-pulse cue, one-shot, higher pitch than pulse 1
