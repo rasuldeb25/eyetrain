@@ -156,6 +156,24 @@ input[type="range"] { max-width: none; width: 100%; }
   to { opacity: 1; transform: translate(-50%, -60%) scale(1); }
 }
 
+/* Tilt-key reminders: dim, at the screen edges (outside the target annulus), answer-by-lean
+   mnemonics. Low contrast on purpose — they must never compete with a threshold stimulus. */
+.tiltzone {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  color: var(--muted);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+  line-height: 1.1;
+}
+.tiltzone.left { left: 12px; }
+.tiltzone.right { right: 12px; }
+.tiltzone span { display: block; font-size: 26px; font-weight: 700; }
+.tiltzone small { display: block; font-size: 13px; }
+
 /* Central fixation marker: DOM overlay so stimulus pixels stay untouched. Dim and small —
    it must anchor gaze without acting as a high-contrast distractor near threshold targets
    (targets never spawn within MIN_ECC_DEG of it). */

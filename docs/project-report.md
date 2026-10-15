@@ -149,6 +149,16 @@ banding) → profile saved to IndexedDB.
   - Frame-timing fidelity monitor: every rAF delta during play is checked against the
     profile's refresh rate; counts of total/long frames are persisted per session and the
     end screen warns when >1% of frames ran long (dropped frames degrade temporal dithering).
+  - **Tilt-vs-location onboarding (user-test feedback, same day):** the first playtest
+    revealed the classic 2AFC confusion — "left/right" read as the patch's POSITION, not its
+    tilt. Fixes: (a) setup copy now states explicitly "answer the tilt, not the position —
+    do NOT press based on where the patch appears"; (b) dim \ ← and / → reminders sit at the
+    left/right screen edges during play (peripheral, far outside the 8° target annulus);
+    (c) a 3-trial interactive practice runs automatically before a device's first-ever real
+    session (and on demand via a "Practice first" button): fixed 0.8 contrast, no time
+    limit, never logged or staircased, and the first two trials deliberately put tilt and
+    position in CONFLICT (lean-left patch on the right side, and vice versa), with feedback
+    that names the distinction. Practice hands off into the real session automatically.
   - **Verified in a live Chrome session**: 42-trial session driven end-to-end (synthetic
     keys + pointer taps); waves advanced with shield depletion, recap banners and bonuses;
     bursts/pops rendered only during intertrial (screenshots confirm a blank overlay during

@@ -24,6 +24,21 @@ const MIN_ECC_DEG = 1.5;
 /** Frame deltas above this multiple of the display's frame interval count as dropped. */
 const DROP_FACTOR = 1.5;
 
+/** Practice trials before the first-ever real session (never logged, never staircased). */
+const TUTORIAL_TRIALS = 3;
+const TUTORIAL_CONTRAST = 0.8;
+/** How long each practice-trial feedback message stays up. */
+const TUTORIAL_FEEDBACK_MS = 3200;
+/**
+ * Scripted practice plan: the first two trials force a tilt/position CONFLICT (the exact
+ * confusion the tutorial exists to untrain), the third is unconstrained.
+ */
+const TUTORIAL_PLAN: { tilt: 1 | -1; side: "left" | "right" | null }[] = [
+  { tilt: -1, side: "right" }, // leans left (\) but appears on the right
+  { tilt: 1, side: "left" }, //  leans right (/) but appears on the left
+  { tilt: Math.random() < 0.5 ? 1 : -1, side: null },
+];
+
 const HIT_COLOR = 0x88c0d0;
 const MISS_COLOR = 0xbf616a;
 const BREACH_COLOR = 0xd0677a;
@@ -51,12 +66,23 @@ interface WaveRecap {
   breached: boolean;
 }
 
+interface TutFeedback {
+  correct: boolean;
+  tilt: 1 | -1;
+  side: "left" | "right";
+  conflict: boolean;
+}
+
 interface LiveState {
   staircase: Staircase;
   renderer: GaborRenderer;
   fx: FxLayer;
   sfx: Sfx;
   profile: ProfileRow;
+  /** Practice mode: fixed high contrast, scripted placement, nothing logged or staircased. */
+  tutorial: boolean;
+  tutCount: number;
+  tutEndAt: number | null;
   cpd: number;
   plannedTrials: number;
   maxEccDeg: number;
@@ -94,7 +120,8 @@ export function SignalHunter() {
   const [cpd, setCpd] = useState(2);
   const [plannedTrials, setPlannedTrials] = useState(40);
   const [maxEccDeg, setMaxEccDeg] = useState(8);
-  const [phase, setPhase] = useState<"setup" | "playing" | "done">("setup");
+  const [phase, setPhase] = useState<"setup" | "tutorial" | "playing" | "done">("setup");
+  const [tutMsg, setTutMsg] = useState<TutFeedback | null>(null);
   const [hud, setHud] = useState({
     score: 0, combo: 0, trial: 0, timeFrac: 1, wave: 1, shield: SHIELD_MAX,
   });
@@ -105,6 +132,8 @@ export function SignalHunter() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const live = useRef<LiveState | null>(null);
+  /** Set once practice completes so the auto-tutorial doesn't re-trigger the same visit. */
+  const tutorialDoneRef = useRef(false);
 
   useEffect(() => {
     void db.profiles.toArray().then((p) => {
@@ -115,9 +144,14 @@ export function SignalHunter() {
   }, []);
 
   function startTrial(s: LiveState) {
-    const isCatch = Math.random() < CATCH_RATE;
-    const contrast = isCatch ? CATCH_CONTRAST : s.staircase.value;
-    const thetaSign: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
+    const plan = s.tutorial ? TUTORIAL_PLAN[s.tutCount] : undefined;
+    const isCatch = s.tutorial ? false : Math.random() < CATCH_RATE;
+    const contrast = s.tutorial
+      ? TUTORIAL_CONTRAST
+      : isCatch
+        ? CATCH_CONTRAST
+        : s.staircase.value;
+    const thetaSign: 1 | -1 = plan ? plan.tilt : Math.random() < 0.5 ? 1 : -1;
     const sigmaPx = degToPx(1 / s.cpd, s.profile); // sigma = one wavelength
     const margin = sigmaPx * 4 + 10;
     const w = s.renderer.widthPx;
@@ -129,7 +163,11 @@ export function SignalHunter() {
     const rMax = Math.min(degToPx(s.maxEccDeg, s.profile), rMaxFit);
     const rMin = Math.min(degToPx(MIN_ECC_DEG, s.profile), rMax * 0.5);
     const rPx = Math.sqrt(Math.random() * (rMax * rMax - rMin * rMin) + rMin * rMin);
-    const phi = Math.random() * 2 * Math.PI;
+    // Scripted practice trials force the patch onto a given half of the screen (±45° around
+    // the horizontal axis) so tilt and position can be put in deliberate conflict.
+    const phi = plan?.side
+      ? (plan.side === "right" ? 0 : Math.PI) + (Math.random() - 0.5) * (Math.PI / 2)
+      : Math.random() * 2 * Math.PI;
     const xPx = w / 2 + rPx * Math.cos(phi);
     const yPx = h / 2 + rPx * Math.sin(phi);
     const eccDeg = pxToDeg(rPx, s.profile);
@@ -147,11 +185,13 @@ export function SignalHunter() {
       thetaSign,
       eccDeg,
       shownAt: performance.now(),
-      deadline: performance.now() + RESPONSE_WINDOW_MS,
+      // Practice has no time pressure — the point is understanding, not speed.
+      deadline: s.tutorial ? Number.POSITIVE_INFINITY : performance.now() + RESPONSE_WINDOW_MS,
       answered: false,
     };
     s.nextTrialAt = null;
     setBanner(null);
+    setTutMsg(null);
     s.sfx.tick(); // audio-only onset cue: no location, no answer information
   }
 
@@ -159,6 +199,28 @@ export function SignalHunter() {
     const c = s.current;
     if (!c || c.answered) return;
     c.answered = true;
+
+    if (s.tutorial) {
+      // Practice: feedback only — no staircase, no log, no score/XP/shield.
+      s.tutCount++;
+      const side = c.gabor.xPx > s.renderer.widthPx / 2 ? "right" : "left";
+      const tiltMatchesSide = (c.thetaSign === 1) === (side === "right");
+      setTutMsg({ correct, tilt: c.thetaSign, side, conflict: !tiltMatchesSide });
+      const dpr = window.devicePixelRatio || 1;
+      if (correct) {
+        s.fx.burst(c.gabor.xPx / dpr, c.gabor.yPx / dpr, HIT_COLOR);
+        s.sfx.hit(1);
+      } else {
+        s.sfx.miss();
+      }
+      s.current = null;
+      if (s.tutCount >= TUTORIAL_TRIALS) {
+        s.tutEndAt = performance.now() + TUTORIAL_FEEDBACK_MS;
+      } else {
+        s.nextTrialAt = performance.now() + TUTORIAL_FEEDBACK_MS;
+      }
+      return;
+    }
 
     if (c.isCatch) {
       s.catches++;
@@ -297,7 +359,7 @@ export function SignalHunter() {
     setPhase("done");
   }
 
-  function start() {
+  async function start(tutorialRequested: boolean) {
     const profile = profiles.find((p) => p.id === profileId);
     if (!profile || !canvasRef.current) return;
     if (!isRenderable(cpd, profile)) {
@@ -305,6 +367,11 @@ export function SignalHunter() {
       return;
     }
     setError(null);
+    // First-ever session on this device: run the practice automatically.
+    let tutorial = tutorialRequested;
+    if (!tutorial && !tutorialDoneRef.current && (await db.sessions.count()) === 0) {
+      tutorial = true;
+    }
     let renderer: GaborRenderer;
     try {
       renderer = new GaborRenderer(canvasRef.current, profile.gamma);
@@ -330,6 +397,9 @@ export function SignalHunter() {
       fx,
       sfx,
       profile,
+      tutorial,
+      tutCount: 0,
+      tutEndAt: null,
       cpd,
       plannedTrials,
       maxEccDeg,
@@ -353,7 +423,7 @@ export function SignalHunter() {
       raf: 0,
     };
     live.current = s;
-    setPhase("playing");
+    setPhase(tutorial ? "tutorial" : "playing");
 
     const loop = () => {
       const st = live.current;
@@ -368,6 +438,20 @@ export function SignalHunter() {
         if (now - st.lastFrameAt > DROP_FACTOR * expected) st.droppedFrames++;
       }
       st.lastFrameAt = now;
+
+      // Practice complete: tear down and hand off to the real session.
+      if (st.tutorial && st.tutEndAt !== null && now >= st.tutEndAt) {
+        tutorialDoneRef.current = true;
+        cancelAnimationFrame(st.raf);
+        st.sfx.waveClear();
+        setTimeout(() => st.sfx.dispose(), 1000); // let the jingle finish first
+        st.renderer.dispose();
+        st.fx.dispose();
+        live.current = null;
+        setTutMsg(null);
+        void start(false);
+        return;
+      }
 
       if (st.current && !st.current.answered && now > st.current.deadline) {
         settleTrial(st, false, null); // timeout = miss
@@ -384,9 +468,10 @@ export function SignalHunter() {
           score: stc.score,
           combo: stc.combo,
           trial: stc.scoredTrials,
-          timeFrac: stc.current
-            ? Math.max(0, (stc.current.deadline - now) / RESPONSE_WINDOW_MS)
-            : 1,
+          timeFrac:
+            stc.current && Number.isFinite(stc.current.deadline)
+              ? Math.max(0, (stc.current.deadline - now) / RESPONSE_WINDOW_MS)
+              : 1,
           wave: waveIndex(stc.scoredTrials),
           shield: stc.shield,
         });
@@ -399,7 +484,7 @@ export function SignalHunter() {
   // Keyboard input.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (phase !== "playing") return;
+      if (phase !== "playing" && phase !== "tutorial") return;
       if (e.key === "ArrowLeft") answer(-1);
       if (e.key === "ArrowRight") answer(1);
     };
@@ -424,14 +509,19 @@ export function SignalHunter() {
   );
 
   return (
-    <div class={phase === "playing" ? "game-full" : "card"}>
+    <div class={phase === "playing" || phase === "tutorial" ? "game-full" : "card"}>
       {phase === "setup" && (
         <section>
           <h1>Signal Hunter</h1>
           <p class="muted">
             Mode A: patch your <strong>left</strong> eye now. Keep your gaze on the central
-            cross; a faint tilted patch will appear around it — press ← if it tilts left (\\),
-            → if it tilts right (/). On touch screens tap the left/right half.
+            cross; a faint striped patch will appear somewhere around it.
+          </p>
+          <p>
+            <strong>Answer the tilt, not the position.</strong> Do <strong>NOT</strong> press
+            based on where the patch appears — press based only on which way its stripes
+            lean: ← if they lean left (&#92;), → if they lean right (/). On touch screens tap
+            the left/right half — again by lean, not location.
           </p>
           {profiles.length === 0 ? (
             <p>
@@ -469,10 +559,14 @@ export function SignalHunter() {
                     new Sfx().setEnabled(e.currentTarget.checked);
                   }} /> Sound
               </label>
-              <p><button onClick={start}>Start</button></p>
+              <p>
+                <button onClick={() => void start(false)}>Start</button>{" "}
+                <button onClick={() => void start(true)}>Practice first (3 trials)</button>
+              </p>
               <p class="muted">
-                Start low (1–3 cpd) while acuity is limited; raise frequency as thresholds
-                improve across weeks.
+                Your first-ever session on a device begins with the short practice
+                automatically. Start low (1–3 cpd) while acuity is limited; raise frequency
+                as thresholds improve across weeks.
               </p>
             </div>
           )}
@@ -480,7 +574,8 @@ export function SignalHunter() {
         </section>
       )}
 
-      <div style={{ display: phase === "playing" ? "block" : "none" }} class="gamewrap">
+      <div style={{ display: phase === "playing" || phase === "tutorial" ? "block" : "none" }}
+        class="gamewrap">
         <canvas ref={canvasRef} class="gamecanvas"
           onPointerDown={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
@@ -488,6 +583,21 @@ export function SignalHunter() {
           }}
         />
         <div class="fixation" aria-hidden="true">+</div>
+        {/* Peripheral key reminders: answer by LEAN. Dim and at the screen edges, well
+            outside the target annulus, so they never distract from a threshold stimulus. */}
+        <div class="tiltzone left" aria-hidden="true">
+          <span>&#92;</span><small>←</small>
+        </div>
+        <div class="tiltzone right" aria-hidden="true">
+          <span>/</span><small>→</small>
+        </div>
+        {phase === "tutorial" ? (
+          <div class="hud">
+            <span>PRACTICE</span>
+            <span>trial {Math.min((live.current?.tutCount ?? 0) + (tutMsg ? 0 : 1), TUTORIAL_TRIALS)}/{TUTORIAL_TRIALS}</span>
+            <span class="muted">answer the lean, not the location</span>
+          </div>
+        ) : (
         <div class="hud">
           <span>wave {hud.wave}</span>
           <span class="shield" aria-label={`shield ${hud.shield} of ${SHIELD_MAX}`}>
@@ -500,6 +610,21 @@ export function SignalHunter() {
           <span>trial {hud.trial}/{plannedTrials}</span>
           <div class="timebar"><div style={{ width: `${hud.timeFrac * 100}%` }} /></div>
         </div>
+        )}
+        {tutMsg && (
+          <div class="wavebanner">
+            <div class="wavetitle">{tutMsg.correct ? "✓ CORRECT" : "✗ NOT QUITE"}</div>
+            <div class="wavestats">
+              The stripes leaned <strong>{tutMsg.tilt === -1 ? "LEFT (\\)" : "RIGHT (/)"}</strong>
+              {tutMsg.conflict && <> — even though the patch sat on the {tutMsg.side} side</>}
+            </div>
+            <div class="muted">
+              {tutMsg.conflict
+                ? "Position never matters. Only the lean of the stripes counts."
+                : "Answer the lean of the stripes, never their location."}
+            </div>
+          </div>
+        )}
         {banner && (
           <div class="wavebanner">
             <div class="wavetitle">
