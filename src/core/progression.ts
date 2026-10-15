@@ -11,6 +11,16 @@ export const DAILY_CAP_MIN = 45;
 /** Prescribed training days per week. */
 export const WEEKLY_GOAL_DAYS = 5;
 
+/** Ocular-fatigue break schedule: one 20-20-20 break per this many cumulative minutes. */
+export const FATIGUE_INTERVAL_MIN = 15;
+export const FATIGUE_BREAK_SECONDS = 30;
+
+/** Fatigue breaks owed after `totalMin` cumulative training minutes today. */
+export function fatigueBreaksDue(totalMin: number): number {
+  if (!Number.isFinite(totalMin) || totalMin < 0) return 0;
+  return Math.floor(totalMin / FATIGUE_INTERVAL_MIN);
+}
+
 /**
  * XP for one trial. Harder trials (lower contrast) are worth more: a correct response at
  * contrast c earns 10 × (1 + logCS) where logCS = max(0, −log10 c). Catch trials earn the

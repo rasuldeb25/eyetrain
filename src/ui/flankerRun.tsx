@@ -22,7 +22,14 @@ import { InterleavedStaircases } from "../core/interleave";
 import { cpdToCyclesPerPx, degToPx, isRenderable } from "../core/visualAngle";
 import { interactionZone, minSeparationLambda, separationPx } from "../core/polat";
 import { raisedCosine, STIM_TOTAL_MS } from "../core/envelope";
-import { levelProgress, trialXp } from "../core/progression";
+import {
+  dayKey,
+  FATIGUE_BREAK_SECONDS,
+  fatigueBreaksDue,
+  levelProgress,
+  sessionMinutes,
+  trialXp,
+} from "../core/progression";
 import { isWaveBoundary, SHIELD_MAX, waveBonus, waveIndex, WAVE_BREAK_MS } from "../core/waves";
 import { GaborRenderer, type GaborParams } from "../render/gaborRenderer";
 import { FxLayer } from "../render/fxLayer";
@@ -97,6 +104,9 @@ interface LiveState {
   waveHits: number;
   waveMisses: number;
   wavesCleared: number;
+  minutesBefore: number;
+  breaksTaken: number;
+  breakUntil: number | null;
   lastFrameAt: number | null;
   totalFrames: number;
   droppedFrames: number;
@@ -140,7 +150,7 @@ export function FlankerRun() {
   const [phase, setPhase] = useState<"setup" | "playing" | "done">("setup");
   const [hud, setHud] = useState({
     score: 0, combo: 0, trial: 0, timeFrac: 1, wave: 1, shield: SHIELD_MAX, stimOn: false,
-    prompt: false,
+    prompt: false, breakLeft: 0,
   });
   const [banner, setBanner] = useState<WaveRecap | null>(null);
   const [soundOn, setSoundOn] = useState(() => new Sfx().enabled);
@@ -312,6 +322,13 @@ export function FlankerRun() {
       s.waveHits = 0;
       s.waveMisses = 0;
       s.nextTrialAt = performance.now() + WAVE_BREAK_MS;
+      // 20-20-20 fatigue break at each 15-min cumulative mark, between waves only.
+      const elapsedMin = (Date.now() - Date.parse(s.startedAt)) / 60_000;
+      if (fatigueBreaksDue(s.minutesBefore + elapsedMin) > s.breaksTaken) {
+        s.breaksTaken++;
+        s.breakUntil = performance.now() + FATIGUE_BREAK_SECONDS * 1000;
+        s.nextTrialAt = s.breakUntil;
+      }
     } else {
       s.nextTrialAt = performance.now() + INTERTRIAL_MS;
     }
@@ -392,7 +409,7 @@ export function FlankerRun() {
     setPhase("done");
   }
 
-  function start() {
+  async function start() {
     const profile = profiles.find((p) => p.id === profileId);
     if (!profile || !canvasRef.current) return;
     if (!isRenderable(cpd, profile)) {
@@ -413,6 +430,10 @@ export function FlankerRun() {
     const fx = new FxLayer();
     const host = canvasRef.current.parentElement;
     if (host) void fx.init(host);
+    const today = dayKey(new Date());
+    const minutesBefore = (await db.sessions.toArray())
+      .filter((row) => dayKey(new Date(row.startedAt)) === today)
+      .reduce((a, row) => a + sessionMinutes(row.startedAt, row.endedAt), 0);
     const contrastCfg = {
       minValue: 0.002,
       maxValue: 1,
@@ -448,6 +469,9 @@ export function FlankerRun() {
       waveHits: 0,
       waveMisses: 0,
       wavesCleared: 0,
+      minutesBefore,
+      breaksTaken: fatigueBreaksDue(minutesBefore),
+      breakUntil: null,
       lastFrameAt: null,
       totalFrames: 0,
       droppedFrames: 0,
@@ -521,6 +545,10 @@ export function FlankerRun() {
           shield: stc.shield,
           stimOn,
           prompt,
+          breakLeft:
+            stc.breakUntil !== null && now < stc.breakUntil
+              ? Math.ceil((stc.breakUntil - now) / 1000)
+              : 0,
         });
         stc.raf = requestAnimationFrame(loop);
       }
@@ -651,7 +679,14 @@ export function FlankerRun() {
           <span>gate {hud.trial}/{plannedTrials}</span>
           <div class="timebar"><div style={{ width: `${hud.timeFrac * 100}%` }} /></div>
         </div>
-        {banner && (
+        {hud.breakLeft > 0 && (
+          <div class="wavebanner">
+            <div class="wavetitle">20·20·20 BREAK</div>
+            <div class="wavestats">Look at something ~20 feet (6 m) away.</div>
+            <div class="muted">resuming in {hud.breakLeft}s</div>
+          </div>
+        )}
+        {banner && hud.breakLeft === 0 && (
           <div class="wavebanner">
             <div class="wavetitle">
               CHECKPOINT {banner.wave} {banner.breached ? "BREACHED" : "CLEARED"}

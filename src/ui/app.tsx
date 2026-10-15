@@ -5,6 +5,7 @@ import { Calibrate } from "./calibrate";
 import { SignalHunter } from "./signalHunter";
 import { FlankerRun } from "./flankerRun";
 import { Dashboard } from "./dashboard";
+import { ClinicalReport } from "./clinicalReport";
 
 const ROUTES: Record<string, () => JSX.Element> = {
   "#/": Home,
@@ -12,6 +13,7 @@ const ROUTES: Record<string, () => JSX.Element> = {
   "#/play": SignalHunter,
   "#/flanker": FlankerRun,
   "#/dashboard": Dashboard,
+  "#/report": ClinicalReport,
 };
 
 export function App() {
@@ -31,6 +33,7 @@ export function App() {
         <a href="#/play" class={route === "#/play" ? "active" : ""}>Signal Hunter</a>
         <a href="#/flanker" class={route === "#/flanker" ? "active" : ""}>Flanker Run</a>
         <a href="#/dashboard" class={route === "#/dashboard" ? "active" : ""}>Dashboard</a>
+        <a href="#/report" class={route === "#/report" ? "active" : ""}>Report</a>
       </nav>
       <main>
         <Page />

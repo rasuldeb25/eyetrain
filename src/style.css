@@ -254,3 +254,47 @@ input[type="range"] { max-width: none; width: 100%; }
 .chartlabel { fill: var(--muted); font-size: 11px; }
 
 .sessions li { margin-bottom: 6px; }
+
+/* Clinical report (#/report) */
+.report { max-width: 760px; }
+.report h1 { font-size: 1.25rem; margin-bottom: 4px; }
+.report h2 { font-size: 1rem; margin: 14px 0 6px; }
+.rmeta { font-size: 0.85rem; color: var(--muted); margin: 4px 0; }
+.rtable { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+.rtable th, .rtable td { text-align: left; padding: 3px 10px 3px 0; vertical-align: top; }
+.rtable thead th { color: var(--muted); font-weight: normal; }
+.rtable tbody th { color: var(--muted); font-weight: normal; white-space: nowrap; }
+.rchart .ci { stroke-width: 1.5; }
+.rchart .s-base .line, .rchart .s-base .ci { stroke: #bf616a; }
+.rchart .s-base .dot { fill: #bf616a; }
+.rchart .s-cur .line, .rchart .s-cur .ci { stroke: var(--accent); }
+.rchart .s-cur .dot { fill: var(--accent); }
+.rchart .s-os .line, .rchart .s-os .ci { stroke: #a3be8c; }
+.rchart .s-os .dot { fill: #a3be8c; }
+.rchart .t-0 .line { stroke: var(--accent); } .rchart .t-0 .dot { fill: var(--accent); }
+.rchart .t-1 .line { stroke: #ebcb8b; } .rchart .t-1 .dot { fill: #ebcb8b; }
+.rchart .t-2 .line { stroke: #a3be8c; } .rchart .t-2 .dot { fill: #a3be8c; }
+
+@media print {
+  :root { color-scheme: light; }
+  body { background: #fff; color: #000; }
+  .topnav, .noprint { display: none !important; }
+  main { overflow: visible; }
+  .card { max-width: none; padding: 0; }
+  .report { font-size: 11px; }
+  a { color: #000; text-decoration: none; }
+  .muted, .rmeta, .chartlabel { color: #444; }
+  .chartlabel { fill: #444; }
+  .chart .axis { stroke: #999; }
+  /* High-contrast grayscale-safe series colors for print. */
+  .rchart .s-base .line, .rchart .s-base .ci { stroke: #888; }
+  .rchart .s-base .dot { fill: #888; }
+  .rchart .s-cur .line, .rchart .s-cur .ci { stroke: #000; }
+  .rchart .s-cur .dot { fill: #000; }
+  .rchart .s-os .line, .rchart .s-os .ci { stroke: #000; stroke-dasharray: 4 3; }
+  .rchart .s-os .dot { fill: #fff; stroke: #000; }
+  .rchart .t-0 .line { stroke: #000; } .rchart .t-0 .dot { fill: #000; }
+  .rchart .t-1 .line { stroke: #666; } .rchart .t-1 .dot { fill: #666; }
+  .rchart .t-2 .line { stroke: #aaa; } .rchart .t-2 .dot { fill: #aaa; }
+  .rtable th, .rtable td { border-bottom: 1px solid #ddd; }
+}

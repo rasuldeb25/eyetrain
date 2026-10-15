@@ -197,6 +197,32 @@ banding) → profile saved to IndexedDB.
     0°, 10 parafoveal at 2.2–6.8°. (Automation note: occluded-tab rAF throttling was worked
     around with a test-only rAF shim; the frame monitor flags such sessions by design.)
     74 unit tests + tsc + build green.
+- **Phase 4 slice 4 (2026-10-15) — Bayesian psychometrics, clinical telemetry, optometrist
+  report:**
+  - `src/core/psychometrics.ts` (tested with synthetic observers of known parameters):
+    zero-dependency maximum-likelihood Weibull 2AFC fitter — threshold at 79.4% (staircase-
+    commensurable), slope β, lapse rate (catch trials included, pinning the lapse),
+    parametric-bootstrap 95% CI on logCS (deterministic via seeded PRNG), plus an SDT
+    response-bias criterion c reconstructed from stimulus class × correctness. Binomial
+    aggregation per contrast level keeps 200 bootstrap refits interactive.
+  - `src/core/clinicalMetrics.ts` (tested): AULCSF (trapezoid over log frequency),
+    interocular ratio, binocular summation ratio, facilitation index (dB), crowding ratio,
+    critical spacing in deg/arcmin, median.
+  - In-session ergonomics: mandatory eye-condition + viewing-distance preflight (slice 3)
+    now joined by the **20-20-20 fatigue break** — 30 s countdown at every 15 cumulative
+    training minutes per day (counting prior sessions), taken between waves only.
+  - **`#/report` — one-page printable clinical report** (`src/ui/clinicalReport.tsx`):
+    patient/calibration/compliance header (days/week and min/day vs prescription, display
+    profile, frame-fidelity pass rate), logCSF chart with 95% CI error bars comparing
+    week-1 baseline vs current week vs OS fellow eye with per-curve AULCSF + ΔAULCSF and
+    interocular ratios, session-by-session logCS trend per frequency with β/lapse/RT/bias
+    annotations, and the lateral-interactions table (isolated vs 3λ thresholds, FI dB,
+    critical spacing in λ/deg/arcmin). `@media print` CSS strips chrome to grayscale-safe
+    black-on-white for a single page ("Print → save as PDF").
+  - **Verified in Chrome** against a synthetic longitudinal dataset (11 sessions over 4
+    weeks, OD improving 0.14→0.065, OS at 0.02, one flanker session): all report numbers
+    check out — interocular ratios 4.0×/6.1×, FI 2.9 dB, critical spacing 2.40λ = 1.20°
+    (72′), compliance and fidelity lines correct. 94 unit tests + tsc + build green.
 - **Phase 4 slice 2 verification (2026-10-15)**: 42-trial session driven end-to-end (synthetic
     keys + pointer taps); waves advanced with shield depletion, recap banners and bonuses;
     bursts/pops rendered only during intertrial (screenshots confirm a blank overlay during
@@ -245,10 +271,12 @@ top of it.
 - ~~Stimulus eccentricity is uncontrolled~~ *(closed in slice 1, 2026-10-15: fixation marker,
   annulus placement with configurable max eccentricity, per-trial `ecc_deg` logging; gaze
   enforcement remains impossible without an eye tracker — honor system)*.
-- Threshold fallback (geometric mean of last 10 values when staircase doesn't converge) is
-  crude; no psychometric (QUEST/Weibull) fit; no test-retest reliability view.
+- ~~Threshold fallback … no psychometric (QUEST/Weibull) fit~~ *(closed in slice 4: MLE
+  Weibull fit with bootstrap CI and lapse estimation on the report page; interleaved-
+  staircase agreement from slice 3 doubles as the within-session reliability view)*.
 - ~~No session timer/dosage tracking against the 30–45 min/day prescription~~ *(closed in
-  slice 1: daily goal ring + over-cap warning)*; in-session break prompts still missing.
+  slice 1: daily goal ring + over-cap warning)*; ~~in-session break prompts still missing~~
+  *(closed in slice 4: 20-20-20 fatigue breaks every 15 cumulative minutes)*.
 
 **7.3 Engineering gaps**
 - PWA incomplete: manifest only, **no service worker** → not installable/offline yet.
@@ -328,7 +356,7 @@ trial-to-trial variety).
 | 1 | Meta-progression (XP/levels/streak), dosage goal ring, fixation marker + eccentricity control & logging | both | **done 2026-10-15** |
 | 2 | Signal Hunter juice pass: PixiJS layer around (never over) the stimulus, WebAudio, waves/shield, frame-timing fidelity monitor + live-session verification | engagement | **done 2026-10-15** |
 | 3 | Flanker Run (3-track Polat topology, 2IFC) + interleaved staircases (block-permuted), raised-cosine presentation envelope, foveal/parafoveal tracks, multi-patch single-pass shader, eye-condition preflight | both | **done 2026-10-15** |
-| 4 | Fatigue break prompts, Weibull psychometric fitter + clinical composite metrics, printable optometrist report | clinical | next |
+| 4 | Fatigue break prompts (20-20-20), Weibull MLE fitter + bootstrap CI + response bias, clinical composite metrics (AULCSF/IOR/BSR/FI/CR), printable one-page optometrist report (#/report) | clinical | **done 2026-10-15** |
 | 5+ | Mode B (start with B2 flicker — no fusion-skill barrier; B1 split-field after a manual free-fusion feasibility test), Beat Align, variety scheduler | both | backlog |
 
 Rationale for the order: slice 1 was pure data/UI (zero rendering risk, immediate daily-goal

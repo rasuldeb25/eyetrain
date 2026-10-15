@@ -3,6 +3,7 @@ import {
   currentStreak,
   dayDiff,
   dayKey,
+  fatigueBreaksDue,
   daysTrainedThisWeek,
   levelProgress,
   sectorStats,
@@ -126,6 +127,16 @@ describe("daysTrainedThisWeek", () => {
       "2026-10-15", // Thu
     ];
     expect(daysTrainedThisWeek(days, "2026-10-15")).toBe(3);
+  });
+});
+
+describe("fatigueBreaksDue", () => {
+  it("owes one break per 15 cumulative minutes", () => {
+    expect(fatigueBreaksDue(0)).toBe(0);
+    expect(fatigueBreaksDue(14.9)).toBe(0);
+    expect(fatigueBreaksDue(15)).toBe(1);
+    expect(fatigueBreaksDue(31)).toBe(2);
+    expect(fatigueBreaksDue(-5)).toBe(0);
   });
 });
 

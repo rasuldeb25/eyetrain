@@ -9,6 +9,12 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { db, type EyeCondition, type ProfileRow, type TrialRow } from "../data/db";
 import { InterleavedStaircases } from "../core/interleave";
 import { raisedCosine, STIM_TOTAL_MS } from "../core/envelope";
+import {
+  dayKey,
+  FATIGUE_BREAK_SECONDS,
+  fatigueBreaksDue,
+  sessionMinutes,
+} from "../core/progression";
 import { Preflight } from "./preflight";
 import { cpdToCyclesPerPx, degToPx, isRenderable, pxToDeg } from "../core/visualAngle";
 import { levelProgress, trialXp } from "../core/progression";
@@ -102,6 +108,10 @@ interface LiveState {
   waveHits: number;
   waveMisses: number;
   wavesCleared: number;
+  /** Minutes already trained today before this session (for the 15-min fatigue schedule). */
+  minutesBefore: number;
+  breaksTaken: number;
+  breakUntil: number | null;
   lastFrameAt: number | null;
   totalFrames: number;
   droppedFrames: number;
@@ -134,6 +144,7 @@ export function SignalHunter() {
   const [tutMsg, setTutMsg] = useState<TutFeedback | null>(null);
   const [hud, setHud] = useState({
     score: 0, combo: 0, trial: 0, timeFrac: 1, wave: 1, shield: SHIELD_MAX, fixOff: false,
+    breakLeft: 0,
   });
   const [eye, setEye] = useState<EyeCondition>("OD");
   const [distanceOk, setDistanceOk] = useState(false);
@@ -325,6 +336,14 @@ export function SignalHunter() {
       s.waveHits = 0;
       s.waveMisses = 0;
       s.nextTrialAt = performance.now() + WAVE_BREAK_MS;
+      // Ocular-fatigue schedule: a 30 s 20-20-20 break at each 15-min cumulative mark,
+      // taken between waves so it never interrupts a trial.
+      const elapsedMin = (Date.now() - Date.parse(s.startedAt)) / 60_000;
+      if (fatigueBreaksDue(s.minutesBefore + elapsedMin) > s.breaksTaken) {
+        s.breaksTaken++;
+        s.breakUntil = performance.now() + FATIGUE_BREAK_SECONDS * 1000;
+        s.nextTrialAt = s.breakUntil;
+      }
     } else {
       s.nextTrialAt = performance.now() + INTERTRIAL_MS;
     }
@@ -406,6 +425,11 @@ export function SignalHunter() {
     if (!tutorial && !tutorialDoneRef.current && (await db.sessions.count()) === 0) {
       tutorial = true;
     }
+    // Minutes already trained today (any game) — drives the 15-min fatigue schedule.
+    const today = dayKey(new Date());
+    const minutesBefore = (await db.sessions.toArray())
+      .filter((row) => dayKey(new Date(row.startedAt)) === today)
+      .reduce((a, row) => a + sessionMinutes(row.startedAt, row.endedAt), 0);
     let renderer: GaborRenderer;
     try {
       renderer = new GaborRenderer(canvasRef.current, profile.gamma);
@@ -447,6 +471,9 @@ export function SignalHunter() {
       waveHits: 0,
       waveMisses: 0,
       wavesCleared: 0,
+      minutesBefore,
+      breaksTaken: fatigueBreaksDue(minutesBefore),
+      breakUntil: null,
       lastFrameAt: null,
       totalFrames: 0,
       droppedFrames: 0,
@@ -525,6 +552,10 @@ export function SignalHunter() {
           wave: waveIndex(stc.scoredTrials),
           shield: stc.shield,
           fixOff,
+          breakLeft:
+            stc.breakUntil !== null && now < stc.breakUntil
+              ? Math.ceil((stc.breakUntil - now) / 1000)
+              : 0,
         });
         stc.raf = requestAnimationFrame(loop);
       }
@@ -686,7 +717,14 @@ export function SignalHunter() {
             </div>
           </div>
         )}
-        {banner && (
+        {hud.breakLeft > 0 && (
+          <div class="wavebanner">
+            <div class="wavetitle">20·20·20 BREAK</div>
+            <div class="wavestats">Look at something ~20 feet (6 m) away.</div>
+            <div class="muted">resuming in {hud.breakLeft}s</div>
+          </div>
+        )}
+        {banner && hud.breakLeft === 0 && (
           <div class="wavebanner">
             <div class="wavetitle">
               WAVE {banner.wave} {banner.breached ? "BREACHED" : "CLEARED"}
