@@ -21,8 +21,8 @@ import { db, type EyeCondition, type ProfileRow, type TrialRow } from "../data/d
 import { InterleavedStaircases } from "../core/interleave";
 import { cpdToCyclesPerPx, degToPx, isRenderable } from "../core/visualAngle";
 import { interactionZone, minSeparationLambda, separationPx } from "../core/polat";
-import { raisedCosine, STIM_TOTAL_MS } from "../core/envelope";
-import { pulseContrasts } from "../core/ifc";
+import { RAMP_MS, raisedCosine } from "../core/envelope";
+import { flankerContrastFor, pulseContrasts } from "../core/ifc";
 import { debugLevel } from "../debug";
 import {
   dayKey,
@@ -142,13 +142,21 @@ interface LiveState {
   raf: number;
 }
 
-const I2_START = STIM_TOTAL_MS + GAP_MS;
-const RESP_START = I2_START + STIM_TOTAL_MS;
+/**
+ * Pulse envelope: 50 ms up / 250 ms plateau / 50 ms down = 350 ms. Longer than Signal
+ * Hunter's 250 ms so the peripheral flankers register alongside a bright target; safe here
+ * because the stimulus sits AT fixation, so a longer pulse cannot invite a saccade onto it
+ * (in Signal Hunter's parafoveal track it could, which is why that game stays at 250 ms).
+ */
+const PLATEAU_MS = 250;
+const PULSE_MS = 2 * RAMP_MS + PLATEAU_MS;
+const I2_START = PULSE_MS + GAP_MS;
+const RESP_START = I2_START + PULSE_MS;
 
 type TrialPhase = "i1" | "gap" | "i2" | "resp" | "over";
 
 function trialPhase(t: number): TrialPhase {
-  if (t < STIM_TOTAL_MS) return "i1";
+  if (t < PULSE_MS) return "i1";
   if (t < I2_START) return "gap";
   if (t < RESP_START) return "i2";
   if (t < RESP_START + RESPONSE_WINDOW_MS) return "resp";
@@ -211,7 +219,7 @@ export function FlankerRun() {
       value = targetContrast;
     } else if (stair === 1) {
       targetContrast = s.stairs.stairs[1]!.value;
-      flankerContrast = FLANKER_C_FACIL;
+      flankerContrast = flankerContrastFor(FLANKER_C_FACIL, targetContrast);
       spacingLambda = FACILITATION_SPACING;
       value = targetContrast;
     } else {
@@ -223,7 +231,7 @@ export function FlankerRun() {
         CROWD_TARGET_MAX,
         Math.max(CROWD_TARGET_MIN, CROWD_TARGET_FACTOR * s.stairs.stairs[0]!.value),
       );
-      flankerContrast = FLANKER_C_CROWD;
+      flankerContrast = flankerContrastFor(FLANKER_C_CROWD, targetContrast);
     }
 
     const common = { sigmaPx, cyclesPerPx, thetaRad, phaseRad: 0 };
@@ -318,7 +326,7 @@ export function FlankerRun() {
       yPx: Math.round(c.targetGeom.yPx),
       eccDeg: 0,
       stair: c.stair ?? undefined,
-      stimMs: STIM_TOTAL_MS,
+      stimMs: PULSE_MS,
       spacingLambda: c.spacingLambda ?? undefined,
       targetContrast: c.targetContrast,
       flankerContrast: c.flankerContrast ?? undefined,
@@ -557,7 +565,7 @@ export function FlankerRun() {
             stimOn = true;
             const pulse: 1 | 2 = ph === "i1" ? 1 : 2;
             pulseNow = pulse;
-            const env = raisedCosine(ph === "i1" ? t : t - I2_START);
+            const env = raisedCosine(ph === "i1" ? t : t - I2_START, RAMP_MS, PLATEAU_MS);
             // 2IFC schedule (core/ifc, unit-tested): flanker contrast is the trial
             // constant in BOTH pulses; only the target contrast toggles (0 when absent).
             //   L = 0.5 + C_target(pulse)·E(t)·G0 + C_flank·E(t)·[G−1 + G+1]
@@ -572,7 +580,7 @@ export function FlankerRun() {
                 `[Pulse ${pulse}] Target Contrast: ${pc.target.toFixed(4)}` +
                   `${pc.target === 0 ? " (absent)" : ""}, Flanker Contrast: ${
                     pc.flanker === null ? "none" : pc.flanker.toFixed(2)
-                  } ×${c.flankerGeom.length} @ ${c.spacingLambda ?? "—"}λ | envelope ramps 0→1→0 over 250 ms`,
+                  } ×${c.flankerGeom.length} @ ${c.spacingLambda ?? "—"}λ | envelope ramps 0→1→0 over ${PULSE_MS} ms`,
               );
             }
             if (ph === "i2" && !c.tickedI2) {

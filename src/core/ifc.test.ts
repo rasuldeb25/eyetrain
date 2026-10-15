@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { pulseContrasts } from "./ifc";
+import { flankerContrastFor, pulseContrasts } from "./ifc";
+
+describe("flankerContrastFor", () => {
+  it("is the base level whenever the target is near or below it", () => {
+    expect(flankerContrastFor(0.5, 0.05)).toBe(0.5);
+    expect(flankerContrastFor(0.5, 0.4)).toBe(0.5);
+    expect(flankerContrastFor(0.5, 0.65)).toBe(0.5);
+    expect(flankerContrastFor(0.6, 0.6)).toBe(0.6);
+  });
+
+  it("tracks a brighter target at a fixed gap below it", () => {
+    expect(flankerContrastFor(0.5, 0.9)).toBeCloseTo(0.75, 10);
+    expect(flankerContrastFor(0.6, 0.9)).toBeCloseTo(0.75, 10);
+    expect(flankerContrastFor(0.5, 0.8)).toBeCloseTo(0.65, 10);
+  });
+
+  it("never exceeds 1", () => {
+    expect(flankerContrastFor(0.5, 1.5)).toBe(1);
+  });
+});
 
 describe("pulseContrasts (2IFC schedule)", () => {
   it("flanked track: flanker contrast is IDENTICAL in both pulses, target toggles", () => {

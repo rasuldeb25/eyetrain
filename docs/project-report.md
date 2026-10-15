@@ -271,6 +271,17 @@ banding) → profile saved to IndexedDB.
     224/224/248/186 against 224/224/249/186). This page is the decisive test for any
     device: if it passes but the game still "looks" exclusive, the issue is perceptual or
     in the display path, not in the stimulus pipeline.
+  - *Resolution (2026-10-15)*: the owner ran `#/shader-test` — PASS — and attributed the
+    percept to contrast masking of the 0.5 flankers by a ~0.9 target during a 250 ms
+    pulse. Two parameter changes requested and made: **dynamic flanker contrast**
+    `C_flank = max(base, C_target − 0.15)` (`core/ifc.flankerContrastFor`, tested; base
+    0.5 on the 3λ track, 0.6 on the crowding track — unchanged near threshold, so the
+    measurement regime is untouched; only the suprathreshold descent changes), and a
+    **longer pulse for Flanker Run only**: 50/250/50 ms = 350 ms. Signal Hunter stays at
+    250 ms deliberately — its parafoveal track puts targets 1.5–8° out, and 350 ms would
+    let a saccade land on them, defeating the eccentricity control; Flanker Run's stimulus
+    is at fixation, so the longer pulse is saccade-safe. Per-trial `flanker_contrast` and
+    `stim_ms` already log the realized values.
 - **Phase 4 slice 2 verification (2026-10-15)**: 42-trial session driven end-to-end (synthetic
     keys + pointer taps); waves advanced with shield depletion, recap banners and bonuses;
     bursts/pops rendered only during intertrial (screenshots confirm a blank overlay during

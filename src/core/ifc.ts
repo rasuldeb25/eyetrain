@@ -19,6 +19,18 @@ export interface PulseContrasts {
   flanker: number | null;
 }
 
+/**
+ * Flanker contrast for a flanked track: the track's base level, raised to track a bright
+ * target so high-contrast targets (early staircase, crowding track) don't perceptually
+ * mask the flankers during a brief pulse: C_flank = max(base, C_target − 0.15).
+ * Near threshold (C_target ≪ base) this is simply the base — the measurement regime is
+ * unchanged; only the suprathreshold descent is affected.
+ */
+export const FLANKER_TRACK_GAP = 0.15;
+export function flankerContrastFor(base: number, targetContrast: number): number {
+  return Math.min(1, Math.max(base, targetContrast - FLANKER_TRACK_GAP));
+}
+
 export function pulseContrasts(trial: IfcTrial, pulse: 1 | 2): PulseContrasts {
   return {
     target: pulse === trial.targetInterval ? trial.targetContrast : 0,
