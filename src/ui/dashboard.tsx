@@ -5,9 +5,11 @@
 import { useEffect, useState } from "preact/hooks";
 import { db, exportCsv, type SessionRow, type TrialRow } from "../data/db";
 
-function LogCsChart({ sessions }: { sessions: SessionRow[] }) {
+function LogCsChart({ sessions, label }: { sessions: SessionRow[]; label: string }) {
   const pts = sessions.filter((s) => s.logCS !== undefined);
-  if (pts.length < 2) return <p class="muted">The trend chart appears after two sessions.</p>;
+  if (pts.length < 2) {
+    return <p class="muted">{label}: the trend chart appears after two sessions.</p>;
+  }
   const w = 560;
   const h = 200;
   const pad = 36;
@@ -20,7 +22,7 @@ function LogCsChart({ sessions }: { sessions: SessionRow[] }) {
   return (
     <svg viewBox={`0 0 ${w} ${h}`} class="chart" role="img"
       aria-label="Contrast sensitivity over sessions">
-      <text x={pad} y={14} class="chartlabel">logCS (higher = better)</text>
+      <text x={pad} y={14} class="chartlabel">{label} — logCS (higher = better)</text>
       <line x1={pad} y1={h - pad} x2={w - pad} y2={h - pad} class="axis" />
       <line x1={pad} y1={pad} x2={pad} y2={h - pad} class="axis" />
       <path d={path} class="line" fill="none" />
@@ -85,10 +87,14 @@ export function Dashboard() {
     URL.revokeObjectURL(a.href);
   }
 
+  const hunter = sessions.filter((s) => s.game === "signal-hunter");
+  const flanker = sessions.filter((s) => s.game === "flanker-run");
+
   return (
     <div class="card">
       <h1>Progress</h1>
-      <LogCsChart sessions={sessions} />
+      <LogCsChart sessions={hunter} label="Signal Hunter" />
+      {flanker.length > 0 && <LogCsChart sessions={flanker} label="Flanker Run (crowded)" />}
       <p>
         <button onClick={() => void downloadCsv()}>Export all trials (CSV)</button>{" "}
         <span class="muted">— bring this to your 6-week optometrist check.</span>
@@ -103,7 +109,9 @@ export function Dashboard() {
               onClick={() => setOpenId(openId === s.id ? null : s.id!)}>
               {new Date(s.startedAt).toLocaleString()}
             </button>{" "}
-            — {s.game}, {s.params.cpd} cpd, {s.trialCount} trials, score {s.score}
+            — {s.game}, {s.params.cpd} cpd
+            {s.params.spacingLambda !== undefined && <>, {s.params.spacingLambda}λ</>}
+            , {s.trialCount} trials, score {s.score}
             {s.logCS !== undefined && <>, logCS <strong>{s.logCS.toFixed(2)}</strong></>}
             {openId === s.id && <StaircaseTrack trials={trials} />}
           </li>

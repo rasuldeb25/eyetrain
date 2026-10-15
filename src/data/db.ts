@@ -13,20 +13,39 @@ export interface ProfileRow extends DisplayProfile {
   notes?: string;
 }
 
-export type GameId = "signal-hunter";
+export type GameId = "signal-hunter" | "flanker-run";
 export type ViewingMode = "A-monocular" | "B1-fusion" | "B2-flicker";
+
+/**
+ * Which eye views the session: OD = right (amblyopic, −15 D) with left patched — the
+ * training condition; OS = left (fellow, −2.5 D) with right patched — the baseline the
+ * interocular ratio needs; OU = both eyes open (binocular summation / Mode B).
+ */
+export type EyeCondition = "OD" | "OS" | "OU";
 
 export interface SessionRow {
   id?: number;
   profileId: number;
   game: GameId;
   mode: ViewingMode;
+  /** Eye condition confirmed at session start (missing on pre-slice-3 sessions = "OD"). */
+  eyeCondition?: EyeCondition;
   startedAt: string; // ISO
   endedAt?: string;
   /** Stimulus configuration for the session (spatial frequency, etc.). */
-  params: { cpd: number; sigmaDeg: number; plannedTrials: number };
-  /** Converged staircase threshold (Michelson contrast), if the run produced one. */
+  params: {
+    cpd: number;
+    sigmaDeg: number;
+    plannedTrials: number;
+    /** Flanker Run: fixed target-flanker separation in λ units for this session. */
+    spacingLambda?: number;
+    /** Flanker Run: flanker contrast as a multiple of the current target contrast. */
+    flankerFactor?: number;
+  };
+  /** Combined staircase threshold (Michelson contrast), if the run produced one. */
   threshold?: number;
+  /** Per-staircase thresholds when the session ran interleaved staircases. */
+  thresholds?: (number | null)[];
   /** log10 contrast sensitivity = -log10(threshold). */
   logCS?: number;
   trialCount: number;
@@ -59,6 +78,16 @@ export interface TrialRow {
   yPx: number;
   /** Target eccentricity: degrees of visual angle from the central fixation marker. */
   eccDeg?: number;
+  /** Which interleaved staircase drove this trial (0-based); undefined for catch trials. */
+  stair?: number;
+  /** Planned stimulus presentation duration (raised-cosine envelope total), ms. */
+  stimMs?: number;
+  /** Flanker Run: target-flanker separation on this trial, λ units. */
+  spacingLambda?: number;
+  /** Flanker Run: target contrast when `value` is the spacing (crowding track). */
+  targetContrast?: number;
+  /** Flanker Run: flanker contrast on this trial. */
+  flankerContrast?: number;
   at: string; // ISO
 }
 
@@ -80,19 +109,25 @@ export async function exportCsv(): Promise<string> {
   const byId = new Map(sessions.map((s) => [s.id!, s]));
   const trials = await db.trials.toArray();
   const header =
-    "session_id,game,mode,started_at,cpd,trial_index,contrast,correct,rt_ms,is_catch,theta_deg,ecc_deg";
+    "session_id,game,mode,eye,started_at,cpd,trial_index,stair,value,spacing_lambda,target_contrast,flanker_contrast,correct,rt_ms,stim_ms,is_catch,theta_deg,ecc_deg";
   const lines = trials.map((t) => {
     const s = byId.get(t.sessionId);
     return [
       t.sessionId,
       s?.game ?? "",
       s?.mode ?? "",
+      s?.eyeCondition ?? "OD",
       s?.startedAt ?? "",
       s?.params.cpd ?? "",
       t.index,
+      t.stair ?? "",
       t.value,
+      t.spacingLambda ?? s?.params.spacingLambda ?? "",
+      t.targetContrast ?? "",
+      t.flankerContrast ?? "",
       t.correct ? 1 : 0,
       t.rtMs ?? "",
+      t.stimMs ?? "",
       t.isCatch ? 1 : 0,
       t.thetaDeg,
       t.eccDeg?.toFixed(2) ?? "",

@@ -37,6 +37,17 @@ export function separationPx(
 }
 
 /**
+ * Smallest center-to-center separation (in λ) that keeps two Gaussian envelopes of SD
+ * `sigmaLambda` (σ expressed in λ units) from materially overlapping: 2.5σ each side.
+ * A spacing staircase must clamp here — closer, the patches merge into one blob and the
+ * summed linear luminance near mid-gray loses its meaning as "target between flankers".
+ */
+export function minSeparationLambda(sigmaLambda: number): number {
+  if (sigmaLambda <= 0) throw new RangeError("sigma must be > 0");
+  return 2.5 * sigmaLambda;
+}
+
+/**
  * Session-level spacing progression per Polat's amblyopia training regimen: start in the
  * neutral zone, advance through peak facilitation toward the suppression boundary.
  * `level` 0 → 9λ, each level −0.5λ, clamped at 2λ.

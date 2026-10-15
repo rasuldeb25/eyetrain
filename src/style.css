@@ -134,6 +134,28 @@ input[type="range"] { max-width: none; width: 100%; }
 }
 .pip.on { background: var(--accent); border-color: var(--accent); }
 
+/* Pre-session check */
+.preflight {
+  border: 1px solid #2c3446;
+  border-radius: 8px;
+  margin: 12px 0;
+  padding: 8px 14px;
+}
+.preflight legend { color: var(--muted); padding: 0 6px; }
+.preflight .block { display: block; margin: 4px 0; }
+
+/* 2IFC response prompt (Flanker Run) — shown only when no stimulus is on screen. */
+.ifcprompt {
+  position: absolute;
+  top: 58%;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--muted);
+  pointer-events: none;
+  user-select: none;
+  font-size: 15px;
+}
+
 /* Wave recap banner: centered DOM overlay shown only during the between-wave break
    (no stimulus is on screen while it is visible). */
 .wavebanner {

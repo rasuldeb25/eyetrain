@@ -3,6 +3,13 @@
  * two shader steps are inverse-gamma encoding and spatiotemporal noise dithering
  * (docs/phase2-math.md §2–4). Positions/sizes are in DEVICE pixels (canvas backing store),
  * never CSS pixels — the stimulus layer renders at devicePixelRatio-native resolution.
+ *
+ * Multi-patch scenes (flanker triplets, calibration sweeps) are composed in a SINGLE
+ * fragment pass: every patch's carrier×envelope contribution is summed in linear luminance
+ * and only then gamma-encoded and dithered once. Opaque per-patch quads would otherwise
+ * overwrite each other's tails wherever 4σ extents overlap — fatal for lateral-masking
+ * stimuli whose whole point is nearby flankers. For a single patch the output is
+ * bit-identical to the previous per-quad shader.
  */
 
 import { buildProgram } from "./gl";
@@ -22,27 +29,28 @@ export interface GaborParams {
   contrast: number;
 }
 
+/** Maximum patches composable in one pass (flanker triplet = 3, calibration sweep = 6). */
+export const MAX_GABORS = 8;
+
 const VERT = `#version 300 es
 layout(location = 0) in vec2 aLocal; // unit quad, -1..1
 uniform vec2 uResolution;
-uniform vec2 uCenter;
-uniform float uHalfSizePx;
-out vec2 vLocalPx;
+uniform vec2 uBoxCenter;
+uniform vec2 uBoxHalf;
+out vec2 vPixel;
 void main() {
-  vLocalPx = aLocal * uHalfSizePx;
-  vec2 pixel = uCenter + vLocalPx;
-  vec2 clip = (pixel / uResolution) * 2.0 - 1.0;
+  vPixel = uBoxCenter + aLocal * uBoxHalf;
+  vec2 clip = (vPixel / uResolution) * 2.0 - 1.0;
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
 }`;
 
 const FRAG = `#version 300 es
 precision highp float;
-in vec2 vLocalPx;
-uniform float uContrast;
-uniform float uSigmaPx;
-uniform float uCyclesPerPx;
-uniform float uTheta;
-uniform float uPhase;
+in vec2 vPixel;
+uniform int uCount;
+// Per patch: A = (centerX, centerY, sigmaPx, cyclesPerPx), B = (theta, phase, contrast, 0).
+uniform vec4 uGaborA[${MAX_GABORS}];
+uniform vec4 uGaborB[${MAX_GABORS}];
 uniform float uInvGamma;
 uniform float uSeed;
 out vec4 outColor;
@@ -55,10 +63,17 @@ float hash(vec2 p) {
 }
 
 void main() {
-  float xr = cos(uTheta) * vLocalPx.x + sin(uTheta) * vLocalPx.y;
-  float r2 = dot(vLocalPx, vLocalPx);
-  float env = exp(-r2 / (2.0 * uSigmaPx * uSigmaPx));
-  float l = 0.5 * (1.0 + uContrast * env * cos(6.28318530718 * uCyclesPerPx * xr + uPhase));
+  float sum = 0.0;
+  for (int i = 0; i < ${MAX_GABORS}; i++) {
+    if (i >= uCount) break;
+    vec2 d = vPixel - uGaborA[i].xy;
+    float sigma = uGaborA[i].z;
+    float xr = cos(uGaborB[i].x) * d.x + sin(uGaborB[i].x) * d.y;
+    float env = exp(-dot(d, d) / (2.0 * sigma * sigma));
+    sum += uGaborB[i].z * env * cos(6.28318530718 * uGaborA[i].w * xr + uGaborB[i].y);
+  }
+  // Superposition in linear luminance, clamped to the displayable range around mean 0.5.
+  float l = 0.5 * (1.0 + clamp(sum, -1.0, 1.0));
   // Inverse gamma, then dither quantization (TS reference: core/gamma.quantizeWithDither).
   float vf = clamp(255.0 * pow(l, uInvGamma), 0.0, 255.0);
   float base = floor(vf);
@@ -75,6 +90,8 @@ export class GaborRenderer {
   private readonly gl: WebGL2RenderingContext;
   private readonly program: WebGLProgram;
   private readonly loc: Record<string, WebGLUniformLocation | null>;
+  private readonly gaborA = new Float32Array(4 * MAX_GABORS);
+  private readonly gaborB = new Float32Array(4 * MAX_GABORS);
   private gamma: number;
   private frame = 0;
 
@@ -101,8 +118,8 @@ export class GaborRenderer {
 
     this.loc = Object.fromEntries(
       [
-        "uResolution", "uCenter", "uHalfSizePx", "uContrast", "uSigmaPx",
-        "uCyclesPerPx", "uTheta", "uPhase", "uInvGamma", "uSeed",
+        "uResolution", "uBoxCenter", "uBoxHalf", "uCount",
+        "uGaborA[0]", "uGaborB[0]", "uInvGamma", "uSeed",
       ].map((n) => [n, gl.getUniformLocation(this.program, n)]),
     );
     this.resize();
@@ -140,21 +157,43 @@ export class GaborRenderer {
     gl.clearColor(bg, bg, bg, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
+    if (gabors.length === 0) return;
+    if (gabors.length > MAX_GABORS) {
+      throw new RangeError(`at most ${MAX_GABORS} patches per scene`);
+    }
+
+    // Bounding box of all patches (±4σ each) — the one quad the shader shades.
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < gabors.length; i++) {
+      const g = gabors[i]!;
+      const r = g.sigmaPx * CUTOFF_SIGMA;
+      minX = Math.min(minX, g.xPx - r);
+      minY = Math.min(minY, g.yPx - r);
+      maxX = Math.max(maxX, g.xPx + r);
+      maxY = Math.max(maxY, g.yPx + r);
+      this.gaborA[4 * i] = g.xPx;
+      this.gaborA[4 * i + 1] = g.yPx;
+      this.gaborA[4 * i + 2] = g.sigmaPx;
+      this.gaborA[4 * i + 3] = g.cyclesPerPx;
+      this.gaborB[4 * i] = g.thetaRad;
+      this.gaborB[4 * i + 1] = g.phaseRad;
+      this.gaborB[4 * i + 2] = g.contrast;
+      this.gaborB[4 * i + 3] = 0;
+    }
+
     gl.useProgram(this.program);
     gl.uniform2f(this.loc["uResolution"]!, this.canvas.width, this.canvas.height);
     gl.uniform1f(this.loc["uInvGamma"]!, 1 / this.gamma);
     gl.uniform1f(this.loc["uSeed"]!, (this.frame % 1024) + 0.5);
-
-    for (const g of gabors) {
-      gl.uniform2f(this.loc["uCenter"]!, g.xPx, g.yPx);
-      gl.uniform1f(this.loc["uHalfSizePx"]!, g.sigmaPx * CUTOFF_SIGMA);
-      gl.uniform1f(this.loc["uContrast"]!, g.contrast);
-      gl.uniform1f(this.loc["uSigmaPx"]!, g.sigmaPx);
-      gl.uniform1f(this.loc["uCyclesPerPx"]!, g.cyclesPerPx);
-      gl.uniform1f(this.loc["uTheta"]!, g.thetaRad);
-      gl.uniform1f(this.loc["uPhase"]!, g.phaseRad);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    }
+    gl.uniform2f(this.loc["uBoxCenter"]!, (minX + maxX) / 2, (minY + maxY) / 2);
+    gl.uniform2f(this.loc["uBoxHalf"]!, (maxX - minX) / 2, (maxY - minY) / 2);
+    gl.uniform1i(this.loc["uCount"]!, gabors.length);
+    gl.uniform4fv(this.loc["uGaborA[0]"]!, this.gaborA, 0, 4 * gabors.length);
+    gl.uniform4fv(this.loc["uGaborB[0]"]!, this.gaborB, 0, 4 * gabors.length);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
   dispose(): void {

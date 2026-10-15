@@ -6,8 +6,10 @@
  * contrast check lapse rate and are excluded from the staircase.
  */
 import { useEffect, useRef, useState } from "preact/hooks";
-import { db, type ProfileRow, type TrialRow } from "../data/db";
-import { Staircase } from "../core/staircase";
+import { db, type EyeCondition, type ProfileRow, type TrialRow } from "../data/db";
+import { InterleavedStaircases } from "../core/interleave";
+import { raisedCosine, STIM_TOTAL_MS } from "../core/envelope";
+import { Preflight } from "./preflight";
 import { cpdToCyclesPerPx, degToPx, isRenderable, pxToDeg } from "../core/visualAngle";
 import { levelProgress, trialXp } from "../core/progression";
 import { isWaveBoundary, SHIELD_MAX, waveBonus, waveIndex, WAVE_BREAK_MS } from "../core/waves";
@@ -15,11 +17,14 @@ import { GaborRenderer, type GaborParams } from "../render/gaborRenderer";
 import { FxLayer } from "../render/fxLayer";
 import { Sfx } from "./sfx";
 
-const RESPONSE_WINDOW_MS = 3000;
+/** Response window measured from stimulus ONSET (presentation itself is 250 ms). */
+const RESPONSE_WINDOW_MS = 2500;
 const INTERTRIAL_MS = 600;
+/** Fixation marker extinguishes this long before stimulus onset (saccade suppression). */
+const FIX_OFF_LEAD_MS = 100;
 const CATCH_RATE = 0.1;
 const CATCH_CONTRAST = 0.8;
-/** Targets never appear closer to fixation than this (keeps the marker non-adjacent). */
+/** Parafoveal track: targets at MIN_ECC_DEG..maxEcc; foveal track presents at 0°. */
 const MIN_ECC_DEG = 1.5;
 /** Frame deltas above this multiple of the display's frame interval count as dropped. */
 const DROP_FACTOR = 1.5;
@@ -45,6 +50,7 @@ const BREACH_COLOR = 0xd0677a;
 
 interface SessionResult {
   threshold: number | null;
+  thresholds: (number | null)[];
   logCS: number | null;
   score: number;
   trials: number;
@@ -74,7 +80,7 @@ interface TutFeedback {
 }
 
 interface LiveState {
-  staircase: Staircase;
+  stairs: InterleavedStaircases;
   renderer: GaborRenderer;
   fx: FxLayer;
   sfx: Sfx;
@@ -105,7 +111,11 @@ interface LiveState {
     isCatch: boolean;
     thetaSign: 1 | -1;
     eccDeg: number;
-    shownAt: number;
+    /** Which interleaved staircase drives this trial; null on catch trials. */
+    stair: number | null;
+    /** Trial start (fixation extinguishes here); stimulus onset is FIX_OFF_LEAD later. */
+    tStart: number;
+    onsetAt: number;
     deadline: number;
     answered: boolean;
   } | null;
@@ -118,13 +128,15 @@ export function SignalHunter() {
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [profileId, setProfileId] = useState<number | null>(null);
   const [cpd, setCpd] = useState(2);
-  const [plannedTrials, setPlannedTrials] = useState(40);
+  const [plannedTrials, setPlannedTrials] = useState(80);
   const [maxEccDeg, setMaxEccDeg] = useState(8);
   const [phase, setPhase] = useState<"setup" | "tutorial" | "playing" | "done">("setup");
   const [tutMsg, setTutMsg] = useState<TutFeedback | null>(null);
   const [hud, setHud] = useState({
-    score: 0, combo: 0, trial: 0, timeFrac: 1, wave: 1, shield: SHIELD_MAX,
+    score: 0, combo: 0, trial: 0, timeFrac: 1, wave: 1, shield: SHIELD_MAX, fixOff: false,
   });
+  const [eye, setEye] = useState<EyeCondition>("OD");
+  const [distanceOk, setDistanceOk] = useState(false);
   const [banner, setBanner] = useState<WaveRecap | null>(null);
   const [soundOn, setSoundOn] = useState(() => new Sfx().enabled);
   const [result, setResult] = useState<SessionResult | null>(null);
@@ -146,31 +158,41 @@ export function SignalHunter() {
   function startTrial(s: LiveState) {
     const plan = s.tutorial ? TUTORIAL_PLAN[s.tutCount] : undefined;
     const isCatch = s.tutorial ? false : Math.random() < CATCH_RATE;
+    const stair = s.tutorial || isCatch ? null : s.stairs.pick();
     const contrast = s.tutorial
       ? TUTORIAL_CONTRAST
-      : isCatch
+      : stair === null
         ? CATCH_CONTRAST
-        : s.staircase.value;
+        : s.stairs.stairs[stair]!.value;
     const thetaSign: 1 | -1 = plan ? plan.tilt : Math.random() < 0.5 ? 1 : -1;
     const sigmaPx = degToPx(1 / s.cpd, s.profile); // sigma = one wavelength
     const margin = sigmaPx * 4 + 10;
     const w = s.renderer.widthPx;
     const h = s.renderer.heightPx;
-    // Place the target in an annulus around central fixation: controlled eccentricity
-    // (logged per trial) instead of uniform-anywhere. Radius is capped so the whole
-    // envelope stays on screen; sampling is uniform over the annulus area.
-    const rMaxFit = Math.max(1, Math.min(w, h) / 2 - margin);
-    const rMax = Math.min(degToPx(s.maxEccDeg, s.profile), rMaxFit);
-    const rMin = Math.min(degToPx(MIN_ECC_DEG, s.profile), rMax * 0.5);
-    const rPx = Math.sqrt(Math.random() * (rMax * rMax - rMin * rMin) + rMin * rMin);
-    // Scripted practice trials force the patch onto a given half of the screen (±45° around
-    // the horizontal axis) so tilt and position can be put in deliberate conflict.
-    const phi = plan?.side
-      ? (plan.side === "right" ? 0 : Math.PI) + (Math.random() - 0.5) * (Math.PI / 2)
-      : Math.random() * 2 * Math.PI;
-    const xPx = w / 2 + rPx * Math.cos(phi);
-    const yPx = h / 2 + rPx * Math.sin(phi);
-    const eccDeg = pxToDeg(rPx, s.profile);
+    // Track topology: staircase 0 presents at FIXATION (0°), staircase 1 in the parafoveal
+    // annulus; catch and practice trials also use the annulus. Annulus sampling is uniform
+    // over area, capped so the whole envelope stays on screen.
+    let xPx: number;
+    let yPx: number;
+    let eccDeg: number;
+    if (!s.tutorial && stair === 0) {
+      xPx = w / 2;
+      yPx = h / 2;
+      eccDeg = 0;
+    } else {
+      const rMaxFit = Math.max(1, Math.min(w, h) / 2 - margin);
+      const rMax = Math.min(degToPx(s.maxEccDeg, s.profile), rMaxFit);
+      const rMin = Math.min(degToPx(MIN_ECC_DEG, s.profile), rMax * 0.5);
+      const rPx = Math.sqrt(Math.random() * (rMax * rMax - rMin * rMin) + rMin * rMin);
+      // Scripted practice trials force the patch onto a given half of the screen (±45°
+      // around the horizontal axis) so tilt and position can be put in deliberate conflict.
+      const phi = plan?.side
+        ? (plan.side === "right" ? 0 : Math.PI) + (Math.random() - 0.5) * (Math.PI / 2)
+        : Math.random() * 2 * Math.PI;
+      xPx = w / 2 + rPx * Math.cos(phi);
+      yPx = h / 2 + rPx * Math.sin(phi);
+      eccDeg = pxToDeg(rPx, s.profile);
+    }
     s.current = {
       gabor: {
         xPx,
@@ -184,9 +206,14 @@ export function SignalHunter() {
       isCatch,
       thetaSign,
       eccDeg,
-      shownAt: performance.now(),
-      // Practice has no time pressure — the point is understanding, not speed.
-      deadline: s.tutorial ? Number.POSITIVE_INFINITY : performance.now() + RESPONSE_WINDOW_MS,
+      stair,
+      tStart: performance.now(),
+      // Fixation extinguishes at tStart; the raised-cosine presentation starts after the
+      // lead. Practice keeps the stimulus up with no time pressure.
+      onsetAt: performance.now() + (s.tutorial ? 0 : FIX_OFF_LEAD_MS),
+      deadline: s.tutorial
+        ? Number.POSITIVE_INFINITY
+        : performance.now() + FIX_OFF_LEAD_MS + RESPONSE_WINDOW_MS,
       answered: false,
     };
     s.nextTrialAt = null;
@@ -222,11 +249,11 @@ export function SignalHunter() {
       return;
     }
 
-    if (c.isCatch) {
+    if (c.isCatch || c.stair === null) {
       s.catches++;
       if (!correct) s.lapses++;
     } else {
-      s.staircase.update(correct);
+      s.stairs.stairs[c.stair]!.update(correct);
       s.scoredTrials++;
     }
     // Fidelity note: everything below runs AFTER the trial settles — the next render()
@@ -267,10 +294,12 @@ export function SignalHunter() {
       xPx: Math.round(c.gabor.xPx),
       yPx: Math.round(c.gabor.yPx),
       eccDeg: Math.round(c.eccDeg * 100) / 100,
+      stair: c.stair ?? undefined,
+      stimMs: STIM_TOTAL_MS,
       at: new Date().toISOString(),
     });
 
-    const finished = s.staircase.done || s.scoredTrials >= s.plannedTrials;
+    const finished = s.stairs.done || s.scoredTrials >= s.plannedTrials;
     s.current = null;
     if (finished) {
       void endSession(s);
@@ -304,7 +333,9 @@ export function SignalHunter() {
   function answer(dir: 1 | -1) {
     const s = live.current;
     if (!s || !s.current || s.current.answered) return;
-    const rt = performance.now() - s.current.shownAt;
+    const now = performance.now();
+    if (now < s.current.onsetAt) return; // before stimulus onset — nothing to answer yet
+    const rt = now - s.current.onsetAt;
     settleTrial(s, dir === s.current.thetaSign, rt);
   }
 
@@ -316,17 +347,19 @@ export function SignalHunter() {
       const meanLog = vals.reduce((a, v) => a + Math.log10(v), 0) / vals.length;
       return Math.pow(10, meanLog);
     })();
-    const threshold = s.staircase.threshold ?? fallback;
+    const threshold = s.stairs.combinedThreshold ?? fallback;
     const logCS = threshold !== null ? -Math.log10(threshold) : null;
 
     const sessionId = await db.sessions.add({
       profileId: s.profile.id!,
       game: "signal-hunter",
       mode: "A-monocular",
+      eyeCondition: eye,
       startedAt: s.startedAt,
       endedAt: new Date().toISOString(),
       params: { cpd: s.cpd, sigmaDeg: 1 / s.cpd, plannedTrials: s.plannedTrials },
       threshold: threshold ?? undefined,
+      thresholds: s.stairs.thresholds,
       logCS: logCS ?? undefined,
       trialCount: s.trialLog.length,
       score: s.score,
@@ -344,6 +377,7 @@ export function SignalHunter() {
     setBanner(null);
     setResult({
       threshold,
+      thresholds: s.stairs.thresholds,
       logCS,
       score: s.score,
       trials: s.trialLog.length,
@@ -385,14 +419,14 @@ export function SignalHunter() {
     const fx = new FxLayer();
     const host = canvasRef.current.parentElement;
     if (host) void fx.init(host); // async; effects before ready are dropped harmlessly
+    // Two interleaved staircases with slightly offset starts: the observer can't track a
+    // single descending contrast, and the pair's agreement is a reliability check.
+    const stairCfg = { minValue: 0.002, maxValue: 1, maxReversals: 10, thresholdReversals: 6 };
     const s: LiveState = {
-      staircase: new Staircase({
-        startValue: 0.4,
-        minValue: 0.002,
-        maxValue: 1,
-        maxReversals: 10,
-        thresholdReversals: 6,
-      }),
+      stairs: new InterleavedStaircases([
+        { ...stairCfg, startValue: 0.4 },
+        { ...stairCfg, startValue: 0.25 },
+      ]),
       renderer,
       fx,
       sfx,
@@ -460,7 +494,23 @@ export function SignalHunter() {
         startTrial(st);
       }
       // Re-render every frame: the dither reseeds per frame (temporal dithering).
-      st.renderer.render(st.current ? [st.current.gabor] : []);
+      // Real trials present through a raised-cosine contrast envelope (250 ms total);
+      // practice keeps the stimulus up at full contrast until answered.
+      let fixOff = false;
+      const cur = st.current;
+      if (cur && !cur.answered) {
+        const env = st.tutorial
+          ? now >= cur.onsetAt
+            ? 1
+            : 0
+          : raisedCosine(now - cur.onsetAt);
+        fixOff = !st.tutorial && now <= cur.onsetAt + STIM_TOTAL_MS;
+        st.renderer.render(
+          env > 0 ? [{ ...cur.gabor, contrast: cur.gabor.contrast * env }] : [],
+        );
+      } else {
+        st.renderer.render([]);
+      }
 
       const stc = live.current; // endSession may have nulled it inside settleTrial
       if (stc) {
@@ -474,6 +524,7 @@ export function SignalHunter() {
               : 1,
           wave: waveIndex(stc.scoredTrials),
           shield: stc.shield,
+          fixOff,
         });
         stc.raf = requestAnimationFrame(loop);
       }
@@ -514,8 +565,9 @@ export function SignalHunter() {
         <section>
           <h1>Signal Hunter</h1>
           <p class="muted">
-            Mode A: patch your <strong>left</strong> eye now. Keep your gaze on the central
-            cross; a faint striped patch will appear somewhere around it.
+            Keep your gaze on the central cross. A faint striped patch <strong>flashes
+            briefly</strong> (¼ second) — sometimes exactly at the cross, sometimes around
+            it — then you have 2.5 s to answer.
           </p>
           <p>
             <strong>Answer the tilt, not the position.</strong> Do <strong>NOT</strong> press
@@ -544,8 +596,8 @@ export function SignalHunter() {
               </label>
               <label>
                 {" "}Trials:{" "}
-                <input type="number" min="20" max="120" step="10" value={plannedTrials}
-                  onInput={(e) => setPlannedTrials(parseInt(e.currentTarget.value) || 40)} />
+                <input type="number" min="20" max="200" step="10" value={plannedTrials}
+                  onInput={(e) => setPlannedTrials(parseInt(e.currentTarget.value) || 80)} />
               </label>
               <label>
                 {" "}Max eccentricity (°):{" "}
@@ -559,9 +611,18 @@ export function SignalHunter() {
                     new Sfx().setEnabled(e.currentTarget.checked);
                   }} /> Sound
               </label>
+              <Preflight profile={profiles.find((p) => p.id === profileId)} eye={eye}
+                onEye={setEye} distanceOk={distanceOk} onDistanceOk={setDistanceOk} />
               <p>
-                <button onClick={() => void start(false)}>Start</button>{" "}
-                <button onClick={() => void start(true)}>Practice first (3 trials)</button>
+                <button onClick={() => void start(false)} disabled={!distanceOk}>
+                  Start
+                </button>{" "}
+                <button onClick={() => void start(true)} disabled={!distanceOk}>
+                  Practice first (3 trials)
+                </button>
+                {!distanceOk && (
+                  <span class="muted"> — confirm the pre-session check first</span>
+                )}
               </p>
               <p class="muted">
                 Your first-ever session on a device begins with the short practice
@@ -582,7 +643,7 @@ export function SignalHunter() {
             answer(e.clientX - rect.left < rect.width / 2 ? -1 : 1);
           }}
         />
-        <div class="fixation" aria-hidden="true">+</div>
+        {!hud.fixOff && <div class="fixation" aria-hidden="true">+</div>}
         {/* Peripheral key reminders: answer by LEAN. Dim and at the screen edges, well
             outside the target annulus, so they never distract from a threshold stimulus. */}
         <div class="tiltzone left" aria-hidden="true">
@@ -649,6 +710,12 @@ export function SignalHunter() {
               Contrast threshold:{" "}
               <strong>{result.threshold !== null ? result.threshold.toFixed(4) : "n/a"}</strong>
               {result.logCS !== null && <> (logCS {result.logCS.toFixed(2)})</>}
+              {result.thresholds.filter((t) => t !== null).length > 1 && (
+                <span class="muted">
+                  {" "}— staircases:{" "}
+                  {result.thresholds.map((t) => (t !== null ? t.toFixed(4) : "n/c")).join(" / ")}
+                </span>
+              )}
             </li>
             <li>Trials: {result.trials} ({result.catches} catch, {result.lapses} lapses)</li>
             <li>Waves cleared: {result.waves}</li>

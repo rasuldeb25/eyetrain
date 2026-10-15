@@ -4,6 +4,7 @@ import {
   FACILITATION_PEAK_LAMBDA,
   interactionZone,
   lambdaDeg,
+  minSeparationLambda,
   separationPx,
   spacingForLevel,
 } from "./polat";
@@ -46,5 +47,16 @@ describe("spacingForLevel progression", () => {
     expect(spacingForLevel(12)).toBe(3);
     expect(spacingForLevel(14)).toBe(2);
     expect(spacingForLevel(100)).toBe(2); // clamped
+  });
+});
+
+describe("minSeparationLambda", () => {
+  it("is 2.5 sigma in lambda units", () => {
+    expect(minSeparationLambda(0.5)).toBeCloseTo(1.25, 10);
+    expect(minSeparationLambda(1)).toBeCloseTo(2.5, 10);
+  });
+
+  it("rejects non-positive sigma", () => {
+    expect(() => minSeparationLambda(0)).toThrow(RangeError);
   });
 });

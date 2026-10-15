@@ -159,7 +159,45 @@ banding) → profile saved to IndexedDB.
     limit, never logged or staircased, and the first two trials deliberately put tilt and
     position in CONFLICT (lean-left patch on the right side, and vice versa), with feedback
     that names the distinction. Practice hands off into the real session automatically.
-  - **Verified in a live Chrome session**: 42-trial session driven end-to-end (synthetic
+- **Phase 4 slice 3 (2026-10-15) — Flanker Run + interleaved staircases + presentation
+  envelope** (incorporating an external reviewing agent's directive, with corrections):
+  - `src/core/interleave.ts` (tested): `InterleavedStaircases` — randomized
+    block-permutation scheduling over K staircases (balanced counts, unpredictable track),
+    per-track and geometric-mean thresholds.
+  - `src/core/envelope.ts` (tested): raised-cosine temporal contrast envelope
+    (50 ms up / 150 ms plateau / 50 ms down = 250 ms). Both games now present briefly
+    through it, decoupled from a 2.5 s response window; `stim_ms` and onset-referenced
+    `rt_ms` logged per trial.
+  - Renderer rework: single-pass multi-patch shader (up to 8 Gabors summed in LINEAR
+    luminance, then one gamma-encode + dither). Required because opaque per-patch quads
+    overwrite each other's tails wherever 4σ extents overlap — fatal for flanker triplets.
+    Bit-identical for single-patch scenes.
+  - Signal Hunter: two interleaved contrast staircases as a dual-eccentricity topology —
+    track 0 foveal (0°, fixation extinguishes 100 ms before onset), track 1 parafoveal
+    annulus; per-trial `stair` logged.
+  - Flanker Run (`src/ui/flankerRun.tsx`): three interleaved tracks per session —
+    (0) isolated baseline contrast, (1) collinear 3λ flankers at contrast 0.5
+    (facilitation), (2) crowding release: spacing staircased 6λ→1.5λ floor with target
+    pinned at 2.5× the isolated track's level (clamped 0.15–0.90), flankers 0.6; σ = 0.5λ.
+    Task is temporal 2IFC ("which pulse held the target").
+    **Correction to the external directive:** its orientation-discrimination task with
+    iso-oriented collinear flankers is self-defeating — visible flankers sharing the
+    target's orientation hand the answer to the observer, so the staircase measures
+    nothing; 2IFC detection is the faithful Polat paradigm and leaks nothing. Its 1.1λ
+    spacing floor also contradicted its own 2.5σ overlap guard (= 1.25λ at σ = 0.5λ);
+    floored at 1.5λ (`polat.minSeparationLambda`).
+  - Eye-condition preflight (both games): OD (training) / OS (fellow baseline) / OU
+    (binocular) + viewing-distance confirmation gate Start; `eyeCondition` persisted per
+    session — prerequisite for the slice-4 interocular metrics. End screen shows the
+    facilitation index (dB) when both contrast tracks converge.
+  - **Verified live in Chrome**: 30-gate Flanker session — tracks balanced exactly 10/10/10
+    by block permutation; per-track parameters, `stim_ms`, onset-referenced RT and
+    `eyeCondition` persisted; 3-patch collinear pulse screenshot shows clean superposition
+    and fixation extinguished. 20-trial Signal Hunter session — 10 foveal trials at exactly
+    0°, 10 parafoveal at 2.2–6.8°. (Automation note: occluded-tab rAF throttling was worked
+    around with a test-only rAF shim; the frame monitor flags such sessions by design.)
+    74 unit tests + tsc + build green.
+- **Phase 4 slice 2 verification (2026-10-15)**: 42-trial session driven end-to-end (synthetic
     keys + pointer taps); waves advanced with shield depletion, recap banners and bonuses;
     bursts/pops rendered only during intertrial (screenshots confirm a blank overlay during
     response windows); session persisted with waves=3, xp=191, frame counts; the frame
@@ -185,8 +223,8 @@ not a game.** The owner's verdict: "simple and boring." Specifically missing:
   2026-10-15: XP/levels/streak/daily goal ring shipped)* — but still no variety between
   sessions and no unlocks; in-game juice (motion, consequence, audio) remains absent.
 - No enemy/threat fiction at all; the "survival arena" pitched in Phase 1 was not built.
-- Only 1 of the 4 designed games exists (missing: Flanker Run / crowding runner,
-  Beat Align / Vernier rhythm, Swarm Keeper / MOT tracking).
+- ~~Only 1 of the 4 designed games exists~~ *(slice 3: Flanker Run shipped — 2 of 4; still
+  missing: Beat Align / Vernier rhythm, Swarm Keeper / MOT tracking)*.
 
 Why it happened: Phase 3 deliberately prioritized stimulus fidelity, calibration, and the
 data pipeline (the "clinical device first" directive). That bet is defensible but the
@@ -202,7 +240,8 @@ top of it.
 **7.2 Clinical/task gaps**
 - No Mode B at all yet (B1 split-field renderer + nonius locks unbuilt; B2 flicker module
   exists in math only; B3 is just a docs concept).
-- No Vernier or crowding tasks (cores exist: `polat.ts` is wired and tested, unused).
+- ~~No Vernier or crowding tasks~~ *(slice 3: crowding/lateral masking shipped as Flanker
+  Run's three tracks; Vernier still missing)*.
 - ~~Stimulus eccentricity is uncontrolled~~ *(closed in slice 1, 2026-10-15: fixation marker,
   annulus placement with configurable max eccentricity, per-trial `ecc_deg` logging; gaze
   enforcement remains impossible without an eye tracker — honor system)*.
@@ -220,8 +259,9 @@ top of it.
 - No Capacitor scaffold yet; no Docker/nginx deployment yet (owner chose local-first).
 - Calibration UX rough: no IPD step in the wizard (default 6.3 cm), no re-measure-distance
   prompt at session start, test data from automation still pollutes the owner's IndexedDB.
-- Single staircase per session: no interleaved staircases (standard practice to counter
-  response bias), no per-spatial-frequency progression plan across sessions.
+- ~~Single staircase per session: no interleaved staircases~~ *(closed in slice 3:
+  block-permuted interleaved staircases in both games)*; per-spatial-frequency progression
+  plan across sessions still manual.
 
 ## 8. Engagement upgrade options (for discussion)
 
@@ -287,8 +327,8 @@ trial-to-trial variety).
 |---|---|---|---|
 | 1 | Meta-progression (XP/levels/streak), dosage goal ring, fixation marker + eccentricity control & logging | both | **done 2026-10-15** |
 | 2 | Signal Hunter juice pass: PixiJS layer around (never over) the stimulus, WebAudio, waves/shield, frame-timing fidelity monitor + live-session verification | engagement | **done 2026-10-15** |
-| 3 | Flanker Run (crowding game on `polat.ts`) + interleaved staircases | both | next |
-| 4 | Break prompts, QUEST/psychometric fit evaluation, printable optometrist report | clinical | planned |
+| 3 | Flanker Run (3-track Polat topology, 2IFC) + interleaved staircases (block-permuted), raised-cosine presentation envelope, foveal/parafoveal tracks, multi-patch single-pass shader, eye-condition preflight | both | **done 2026-10-15** |
+| 4 | Fatigue break prompts, Weibull psychometric fitter + clinical composite metrics, printable optometrist report | clinical | next |
 | 5+ | Mode B (start with B2 flicker — no fusion-skill barrier; B1 split-field after a manual free-fusion feasibility test), Beat Align, variety scheduler | both | backlog |
 
 Rationale for the order: slice 1 was pure data/UI (zero rendering risk, immediate daily-goal

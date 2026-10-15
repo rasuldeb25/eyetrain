@@ -41,7 +41,11 @@ export function Home() {
       <ol>
         <li>Contact lenses in, patch over the <strong>left</strong> eye.</li>
         <li>Same chair/position as calibration; brightness untouched.</li>
-        <li><a href="#/play">Play Signal Hunter</a> — 30–45 min total, breaks every ~10 min.</li>
+        <li>
+          Play <a href="#/play">Signal Hunter</a> (contrast) and{" "}
+          <a href="#/flanker">Flanker Run</a> (crowding) — 30–45 min total, breaks every
+          ~10 min; variety between tasks aids transfer.
+        </li>
         <li>Progress and exports for your optometrist: <a href="#/dashboard">Dashboard</a>.</li>
       </ol>
     </div>
