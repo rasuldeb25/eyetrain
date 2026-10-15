@@ -22,6 +22,7 @@ import { InterleavedStaircases } from "../core/interleave";
 import { cpdToCyclesPerPx, degToPx, isRenderable } from "../core/visualAngle";
 import { interactionZone, minSeparationLambda, separationPx } from "../core/polat";
 import { raisedCosine, STIM_TOTAL_MS } from "../core/envelope";
+import { pulseScene } from "../core/ifc";
 import {
   dayKey,
   FATIGUE_BREAK_SECONDS,
@@ -38,7 +39,10 @@ import { Sfx } from "./sfx";
 
 const GAP_MS = 350;
 const RESPONSE_WINDOW_MS = 2500;
-const INTERTRIAL_MS = 700;
+/** Long enough that a trial boundary cannot be mistaken for the between-pulse gap. */
+const INTERTRIAL_MS = 1200;
+/** Session auto-extends past the planned count until staircases converge, up to this. */
+const EXTENSION_FACTOR = 1.5;
 const CATCH_RATE = 0.1;
 const CATCH_CONTRAST = 0.8;
 const DROP_FACTOR = 1.5;
@@ -123,6 +127,7 @@ interface LiveState {
     tStart: number;
     answered: boolean;
     respStartedAt: number | null;
+    tickedI2: boolean;
   } | null;
   nextTrialAt: number | null;
   startedAt: string;
@@ -150,7 +155,7 @@ export function FlankerRun() {
   const [phase, setPhase] = useState<"setup" | "playing" | "done">("setup");
   const [hud, setHud] = useState({
     score: 0, combo: 0, trial: 0, timeFrac: 1, wave: 1, shield: SHIELD_MAX, stimOn: false,
-    prompt: false, breakLeft: 0,
+    prompt: false, breakLeft: 0, pulse: 0,
   });
   const [banner, setBanner] = useState<WaveRecap | null>(null);
   const [soundOn, setSoundOn] = useState(() => new Sfx().enabled);
@@ -236,6 +241,7 @@ export function FlankerRun() {
       tStart: performance.now(),
       answered: false,
       respStartedAt: null,
+      tickedI2: false,
     };
     s.nextTrialAt = null;
     setBanner(null);
@@ -298,7 +304,10 @@ export function FlankerRun() {
       at: new Date().toISOString(),
     });
 
-    const finished = s.stairs.done || s.scoredTrials >= s.plannedTrials;
+    // The planned count is a soft target: the session extends until every staircase
+    // converges, capped at EXTENSION_FACTOR × planned so a bad day still ends.
+    const hardCap = Math.ceil(s.plannedTrials * EXTENSION_FACTOR);
+    const finished = s.stairs.done || s.scoredTrials >= hardCap;
     s.current = null;
     if (finished) {
       void endSession(s);
@@ -434,10 +443,17 @@ export function FlankerRun() {
     const minutesBefore = (await db.sessions.toArray())
       .filter((row) => dayKey(new Date(row.startedAt)) === today)
       .reduce((a, row) => a + sessionMinutes(row.startedAt, row.endedAt), 0);
+    // Tuning from a 200-seed simulated-observer sweep (see convergence.test.ts): 0.35 log
+    // early steps cross the suprathreshold gap fast, 0.1 log steps bracket the threshold;
+    // 8 reversals (last 6 averaged) → ≥97% convergence within ~45 trials at moderate
+    // thresholds, ~84% at deep ones (the +50% session extension covers the rest).
     const contrastCfg = {
       minValue: 0.002,
       maxValue: 1,
-      maxReversals: 10,
+      stepLogInitial: 0.35,
+      stepLogFinal: 0.1,
+      reversalsToShrink: 2,
+      maxReversals: 8,
       thresholdReversals: 6,
     };
     const s: LiveState = {
@@ -449,7 +465,10 @@ export function FlankerRun() {
           startValue: SPACING_START,
           minValue: Math.max(1.5, minSeparationLambda(SIGMA_LAMBDA)),
           maxValue: SPACING_MAX,
-          maxReversals: 10,
+          stepLogInitial: 0.2,
+          stepLogFinal: 0.08,
+          reversalsToShrink: 2,
+          maxReversals: 8,
           thresholdReversals: 6,
         },
       ]),
@@ -504,6 +523,7 @@ export function FlankerRun() {
       let stimOn = false;
       let prompt = false;
       let timeFrac = 1;
+      let pulseNow = 0;
       const c = st.current;
       if (c && !c.answered) {
         const t = now - c.tStart;
@@ -511,16 +531,20 @@ export function FlankerRun() {
         if (ph === "over") {
           settleTrial(st, false, null); // timeout = miss
         } else {
-          const scene: GaborParams[] = [];
+          let scene: GaborParams[] = [];
           if (ph === "i1" || ph === "i2") {
             stimOn = true;
+            const pulse = ph === "i1" ? 1 : 2;
+            pulseNow = pulse;
             const env = raisedCosine(ph === "i1" ? t : t - I2_START);
-            for (const f of c.flankers) scene.push({ ...f, contrast: f.contrast * env });
-            if ((ph === "i1" ? 1 : 2) === c.targetInterval) {
-              scene.push({ ...c.target, contrast: c.target.contrast * env });
-            }
-            if (ph === "i2" && t < I2_START + 50 && c.respStartedAt === null) {
-              st.sfx.tick(); // second-pulse onset cue
+            // Flankers in BOTH pulses, target only in its own — see core/ifc (tested).
+            scene = pulseScene(c.flankers, c.target, c.targetInterval, pulse).map((g) => ({
+              ...g,
+              contrast: g.contrast * env,
+            }));
+            if (ph === "i2" && !c.tickedI2) {
+              c.tickedI2 = true;
+              st.sfx.tick(true); // second-pulse cue, one-shot, higher pitch than pulse 1
             }
           }
           if (ph === "resp") {
@@ -545,6 +569,7 @@ export function FlankerRun() {
           shield: stc.shield,
           stimOn,
           prompt,
+          pulse: pulseNow,
           breakLeft:
             stc.breakUntil !== null && now < stc.breakUntil
               ? Math.ceil((stc.breakUntil - now) / 1000)
@@ -594,13 +619,19 @@ export function FlankerRun() {
         <section>
           <h1>Flanker Run</h1>
           <p class="muted">
-            Keep your gaze on the center. Two brief pulses flash — on most gates the target
-            sits between two brighter "gate post" patches; on some it stands alone. The faint
-            target appears in exactly <strong>one</strong> pulse.
+            Keep your gaze on the center cross. Each gate is <strong>two brief pulses</strong>:
+            pulse 1 (low tick, the left "1" marker lights up), a short gap, then pulse 2
+            (higher tick, the right "2" marker lights up). On flanked gates <em>both</em>
+            pulses show two bright "gate post" patches; on isolated gates there are no posts
+            at all. The faint target appears in exactly <strong>ONE</strong> pulse — first or
+            second, <strong>at random</strong>.
           </p>
           <p>
-            <strong>Which pulse held the target?</strong> Press ← for the first pulse, → for
-            the second (or tap the left/right half).
+            <strong>Which pulse held the target?</strong><br />
+            Press <strong>←</strong> (or tap the LEFT half) = it was in <strong>pulse 1</strong>.<br />
+            Press <strong>→</strong> (or tap the RIGHT half) = it was in <strong>pulse 2</strong>.<br />
+            Answer after pulse 2 ends. If the two pulses looked identical, guess — near your
+            threshold that is normal and expected.
           </p>
           {profiles.length === 0 ? (
             <p>
@@ -636,7 +667,9 @@ export function FlankerRun() {
               <p class="muted">
                 One session measures three things at once (randomly interleaved): isolated
                 threshold, threshold with collinear 3λ flankers (facilitation), and the
-                critical spacing at which flankers start masking a visible target.
+                critical spacing at which flankers start masking a visible target. If the
+                staircases haven't converged at the planned count, the session extends
+                automatically (up to +50%) until they do.
               </p>
               <Preflight profile={profiles.find((p) => p.id === profileId)} eye={eye}
                 onEye={setEye} distanceOk={distanceOk} onDistanceOk={setDistanceOk} />
@@ -660,10 +693,10 @@ export function FlankerRun() {
           }}
         />
         {!hud.stimOn && <div class="fixation" aria-hidden="true">+</div>}
-        <div class="tiltzone left" aria-hidden="true">
+        <div class={hud.pulse === 1 ? "tiltzone left live" : "tiltzone left"} aria-hidden="true">
           <span>1</span><small>←</small>
         </div>
-        <div class="tiltzone right" aria-hidden="true">
+        <div class={hud.pulse === 2 ? "tiltzone right live" : "tiltzone right"} aria-hidden="true">
           <span>2</span><small>→</small>
         </div>
         {hud.prompt && <div class="ifcprompt" aria-hidden="true">1st or 2nd?</div>}
@@ -676,7 +709,10 @@ export function FlankerRun() {
           </span>
           <span>score {hud.score}</span>
           <span>combo ×{hud.combo}</span>
-          <span>gate {hud.trial}/{plannedTrials}</span>
+          <span>
+            gate {hud.trial}/{plannedTrials}
+            {hud.trial >= plannedTrials ? "+" : ""}
+          </span>
           <div class="timebar"><div style={{ width: `${hud.timeFrac * 100}%` }} /></div>
         </div>
         {hud.breakLeft > 0 && (

@@ -64,9 +64,13 @@ export class Sfx {
     osc.stop(t0 + durS + 0.02);
   }
 
-  /** Trial onset: short neutral blip (temporal cue only — no location, no answer hint). */
-  tick(): void {
-    this.tone(1760, 0.04, "sine", 0.04);
+  /**
+   * Pulse-onset blip (temporal cue only — no location, no answer hint). `high` marks the
+   * second 2IFC pulse with a higher pitch so the two pulses are easy to count; the pitch
+   * never depends on where the target is.
+   */
+  tick(high = false): void {
+    this.tone(high ? 2217 : 1760, 0.04, "sine", 0.04);
   }
 
   /** Correct answer: pitch climbs one semitone per combo step (caps one octave up). */

@@ -223,6 +223,28 @@ banding) → profile saved to IndexedDB.
     weeks, OD improving 0.14→0.065, OS at 0.02, one flanker session): all report numbers
     check out — interocular ratios 4.0×/6.1×, FI 2.9 dB, critical spacing 2.40λ = 1.20°
     (72′), compliance and fidelity lines correct. 94 unit tests + tsc + build green.
+- **Slice 4b — field-test fixes (2026-10-15, after the owner's 99-trial Flanker run):**
+  - *2IFC legibility*: explicit control-mapping instructions (← = pulse 1, → = pulse 2,
+    target pulse is RANDOM); the edge "1"/"2" markers now light up during their pulse; the
+    second pulse's audio tick is higher-pitched (and fixed to fire once, not per frame);
+    intertrial gap raised 700 → 1200 ms so a trial boundary can't be mistaken for the
+    between-pulse gap.
+  - *Convergence*: the reported all-tracks-n/c outcome was real — the slice-3 steps
+    (0.1→0.05 log, 10 reversals) cannot finish in ~33 trials/track from a 0.4 start. A
+    200-seed simulated-observer sweep selected 0.35→0.1 log steps with 8 reversals
+    (≥97% convergence in ~45 trials at moderate thresholds; small bias ≈ 0.02 log), both
+    games retuned, plus **dynamic extension**: the planned trial count is now a soft
+    target and the session continues until all staircases converge, capped at +50%
+    (HUD shows "n/planned+"). Pinned by `convergence.test.ts`.
+  - *Reported rendering bug — investigated, not reproduced*: the 2IFC composition rule was
+    extracted to `core/ifc.ts` (pulseScene, unit-tested: flankers in BOTH pulses, target
+    only in its own) and the shader was proven at the pixel level — a 3-patch scene with
+    overlapping 4σ boxes read back flankers 230/231, target 249, bg 186 against analytic
+    predictions 230/249/186 (±1 dither). The observed "pulse 1 = flankers only, pulse 2 =
+    bare target" is two CONSECUTIVE trials (a flanked gate's no-target pulse followed by a
+    catch trial, which is deliberately an isolated bright target) misread as one — the
+    700 ms intertrial gap vs 350 ms pulse gap made boundaries illegible; fixed by the
+    legibility changes above. Note the target pulse is random, not always pulse 2.
 - **Phase 4 slice 2 verification (2026-10-15)**: 42-trial session driven end-to-end (synthetic
     keys + pointer taps); waves advanced with shield depletion, recap banners and bonuses;
     bursts/pops rendered only during intertrial (screenshots confirm a blank overlay during

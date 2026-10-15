@@ -310,7 +310,9 @@ export function SignalHunter() {
       at: new Date().toISOString(),
     });
 
-    const finished = s.stairs.done || s.scoredTrials >= s.plannedTrials;
+    // Planned count is a soft target: extend until both staircases converge, capped +50%.
+    const hardCap = Math.ceil(s.plannedTrials * 1.5);
+    const finished = s.stairs.done || s.scoredTrials >= hardCap;
     s.current = null;
     if (finished) {
       void endSession(s);
@@ -445,7 +447,17 @@ export function SignalHunter() {
     if (host) void fx.init(host); // async; effects before ready are dropped harmlessly
     // Two interleaved staircases with slightly offset starts: the observer can't track a
     // single descending contrast, and the pair's agreement is a reliability check.
-    const stairCfg = { minValue: 0.002, maxValue: 1, maxReversals: 10, thresholdReversals: 6 };
+    // Tuning from the 200-seed sweep in convergence.test.ts: ≥97% convergence in ~45
+    // trials per staircase at moderate thresholds; the +50% extension covers the rest.
+    const stairCfg = {
+      minValue: 0.002,
+      maxValue: 1,
+      stepLogInitial: 0.35,
+      stepLogFinal: 0.1,
+      reversalsToShrink: 2,
+      maxReversals: 8,
+      thresholdReversals: 6,
+    };
     const s: LiveState = {
       stairs: new InterleavedStaircases([
         { ...stairCfg, startValue: 0.4 },
@@ -699,7 +711,10 @@ export function SignalHunter() {
           </span>
           <span>score {hud.score}</span>
           <span>combo ×{hud.combo}</span>
-          <span>trial {hud.trial}/{plannedTrials}</span>
+          <span>
+            trial {hud.trial}/{plannedTrials}
+            {hud.trial >= plannedTrials ? "+" : ""}
+          </span>
           <div class="timebar"><div style={{ width: `${hud.timeFrac * 100}%` }} /></div>
         </div>
         )}

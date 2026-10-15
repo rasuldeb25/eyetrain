@@ -193,6 +193,8 @@ input[type="range"] { max-width: none; width: 100%; }
 }
 .tiltzone.left { left: 12px; }
 .tiltzone.right { right: 12px; }
+/* 2IFC pulse indicator: the matching marker lights up during its pulse. */
+.tiltzone.live { opacity: 1; color: var(--accent); }
 .tiltzone span { display: block; font-size: 26px; font-weight: 700; }
 .tiltzone small { display: block; font-size: 13px; }
 
