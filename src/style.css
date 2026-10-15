@@ -124,6 +124,38 @@ input[type="range"] { max-width: none; width: 100%; }
 }
 .timebar > div { height: 100%; background: var(--accent); }
 
+.shield { display: inline-flex; gap: 3px; align-items: center; }
+.pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #1c2230;
+  border: 1px solid #2c3446;
+}
+.pip.on { background: var(--accent); border-color: var(--accent); }
+
+/* Wave recap banner: centered DOM overlay shown only during the between-wave break
+   (no stimulus is on screen while it is visible). */
+.wavebanner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -60%);
+  text-align: center;
+  background: rgba(11, 14, 20, 0.85);
+  border: 1px solid #2c3446;
+  border-radius: 10px;
+  padding: 16px 28px;
+  pointer-events: none;
+  animation: bannerin 200ms ease-out;
+}
+.wavetitle { font-size: 1.3rem; font-weight: 700; letter-spacing: 2px; color: var(--accent); }
+.wavestats { margin: 4px 0; font-variant-numeric: tabular-nums; }
+@keyframes bannerin {
+  from { opacity: 0; transform: translate(-50%, -60%) scale(0.92); }
+  to { opacity: 1; transform: translate(-50%, -60%) scale(1); }
+}
+
 /* Central fixation marker: DOM overlay so stimulus pixels stay untouched. Dim and small —
    it must anchor gaze without acting as a high-contrast distractor near threshold targets
    (targets never spawn within MIN_ECC_DEG of it). */

@@ -33,6 +33,15 @@ export interface SessionRow {
   score: number;
   /** Meta-progression XP earned this session (derivable from trials; stored for display). */
   xp?: number;
+  /** Waves completed (action layer; cosmetic grouping of 10 scored trials). */
+  waves?: number;
+  /**
+   * Frame-timing fidelity record: rAF frames observed during play and how many exceeded
+   * 1.5× the display's frame interval. Dropped frames invalidate temporal dithering, so a
+   * high rate flags the session's near-threshold data as suspect.
+   */
+  totalFrames?: number;
+  droppedFrames?: number;
 }
 
 export interface TrialRow {

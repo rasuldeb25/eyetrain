@@ -5,8 +5,10 @@
 > **2026-10-15 update:** Phase 4 direction decided — a **merged track** (engagement and
 > clinical gaps interleaved in slices, see §11). Slice 1 is implemented: meta-progression
 > (XP/levels/streak), daily dosage goal ring, central fixation marker, and
-> eccentricity-controlled target placement with per-trial logging. Sections 6–8 are annotated
-> where this changes them.
+> eccentricity-controlled target placement with per-trial logging. Slice 2 (same day): the
+> Signal Hunter juice pass — PixiJS effects layer, synthesized WebAudio, wave/shield
+> structure, frame-timing fidelity monitor — implemented and verified in a live Chrome
+> session. Sections 6–8 are annotated where this changes them.
 
 This document is self-contained: it gives a reviewing agent (or human) everything needed to
 critique the project without reading the codebase first. Sections 7–9 are the honest
@@ -128,6 +130,32 @@ banding) → profile saved to IndexedDB.
     (default 8°) around fixation; eccentricity logged per trial and exported in CSV
     (`ecc_deg` column); XP earned per session persisted and shown with level progress on the
     end screen.
+- **Phase 4 slice 2 (2026-10-15) — the juice pass:**
+  - `src/render/fxLayer.ts`: PixiJS 8 overlay on a transparent canvas stacked above the
+    stimulus canvas (separate GL context — stimulus pixels untouched). Particle bursts and
+    floating score pops at the settled target's location, edge-only red vignette on miss.
+    Every effect's lifetime ≤ 450 ms, strictly below the 600 ms intertrial gap, and effects
+    are only ever triggered after a trial settles — the overlay is provably blank during
+    every response window.
+  - `src/ui/sfx.ts`: synthesized WebAudio (no assets) — trial-onset tick (audio-only
+    temporal cue, carries no location/answer information), combo-pitched hit chime, miss
+    thud, shield-breach buzz, wave-clear arpeggio; mobile-safe unlock from the Start
+    gesture; persisted mute toggle.
+  - `src/core/waves.ts` (pure, tested): 10-trial waves, 3-segment per-wave shield, bonus for
+    surviving shield + perfect waves. **Design answer to §9 Q2:** a 3-down/1-up staircase
+    forces ~21% misses at convergence, so lives NEVER end the session — consequence is
+    per-wave and cosmetic, the staircase and trial schedule are untouched, and every session
+    runs to its planned trial count. Wave breaks (2.5 s recap banner) double as micro-breaks.
+  - Frame-timing fidelity monitor: every rAF delta during play is checked against the
+    profile's refresh rate; counts of total/long frames are persisted per session and the
+    end screen warns when >1% of frames ran long (dropped frames degrade temporal dithering).
+  - **Verified in a live Chrome session**: 42-trial session driven end-to-end (synthetic
+    keys + pointer taps); waves advanced with shield depletion, recap banners and bonuses;
+    bursts/pops rendered only during intertrial (screenshots confirm a blank overlay during
+    response windows); session persisted with waves=3, xp=191, frame counts; the frame
+    monitor correctly flagged the throttled automation tab (~3% long frames) — exactly the
+    failure mode it exists to catch. Test DB deleted afterwards; 59 unit tests + tsc +
+    production build green.
 - **End-to-end verified in a real Chrome session**: calibration flow walked through; a full
   45-trial session driven by a random responder correctly converged the staircase to ceiling
   (threshold 0.97 — the expected outcome for chance performance), persisted session + 45
@@ -139,8 +167,10 @@ banding) → profile saved to IndexedDB.
 not a game.** The owner's verdict: "simple and boring." Specifically missing:
 
 - No motion: the Gabor sits still; nothing approaches, dodges, or threatens.
-- No consequence loop: no lives/health/waves; a miss just zeroes the combo.
-- No juice: no particles, hit-flash, screen shake, slow-mo, sound, or music.
+- ~~No consequence loop: no lives/health/waves; a miss just zeroes the combo.~~ *(closed in
+  slice 2: waves + per-wave shield + bonuses — fidelity-safe variant, see §6)*
+- ~~No juice: no particles, hit-flash, sound~~ *(closed in slice 2: particle bursts, score
+  pops, edge flash, synthesized audio)* — no music or slow-mo yet.
 - ~~No meta-progression: no XP, levels, unlocks, streaks, daily goals~~ *(closed in slice 1,
   2026-10-15: XP/levels/streak/daily goal ring shipped)* — but still no variety between
   sessions and no unlocks; in-game juice (motion, consequence, audio) remains absent.
@@ -173,7 +203,8 @@ top of it.
 
 **7.3 Engineering gaps**
 - PWA incomplete: manifest only, **no service worker** → not installable/offline yet.
-- PixiJS declared but unused; no audio stack (needs WebAudio, mobile unlock handling).
+- ~~PixiJS declared but unused; no audio stack~~ *(closed in slice 2: PixiJS fx overlay +
+  synthesized WebAudio with mobile unlock)*.
 - No data backup/sync: IndexedDB only — browser data wipe destroys the clinical record
   (mitigation today: regular CSV export; proper fix: tiny sync service on the Oracle box).
 - No Capacitor scaffold yet; no Docker/nginx deployment yet (owner chose local-first).
@@ -245,8 +276,8 @@ trial-to-trial variety).
 | Slice | Contents | Track | Status |
 |---|---|---|---|
 | 1 | Meta-progression (XP/levels/streak), dosage goal ring, fixation marker + eccentricity control & logging | both | **done 2026-10-15** |
-| 2 | Signal Hunter juice pass: PixiJS layer around (never over) the stimulus, WebAudio, enemy fiction, waves/lives — followed by mandatory fidelity re-verification (dither sweep, frame-timing check) | engagement | next |
-| 3 | Flanker Run (crowding game on `polat.ts`) + interleaved staircases | both | planned |
+| 2 | Signal Hunter juice pass: PixiJS layer around (never over) the stimulus, WebAudio, waves/shield, frame-timing fidelity monitor + live-session verification | engagement | **done 2026-10-15** |
+| 3 | Flanker Run (crowding game on `polat.ts`) + interleaved staircases | both | next |
 | 4 | Break prompts, QUEST/psychometric fit evaluation, printable optometrist report | clinical | planned |
 | 5+ | Mode B (start with B2 flicker — no fusion-skill barrier; B1 split-field after a manual free-fusion feasibility test), Beat Align, variety scheduler | both | backlog |
 

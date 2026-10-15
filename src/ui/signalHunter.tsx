@@ -10,7 +10,10 @@ import { db, type ProfileRow, type TrialRow } from "../data/db";
 import { Staircase } from "../core/staircase";
 import { cpdToCyclesPerPx, degToPx, isRenderable, pxToDeg } from "../core/visualAngle";
 import { levelProgress, trialXp } from "../core/progression";
+import { isWaveBoundary, SHIELD_MAX, waveBonus, waveIndex, WAVE_BREAK_MS } from "../core/waves";
 import { GaborRenderer, type GaborParams } from "../render/gaborRenderer";
+import { FxLayer } from "../render/fxLayer";
+import { Sfx } from "./sfx";
 
 const RESPONSE_WINDOW_MS = 3000;
 const INTERTRIAL_MS = 600;
@@ -18,6 +21,12 @@ const CATCH_RATE = 0.1;
 const CATCH_CONTRAST = 0.8;
 /** Targets never appear closer to fixation than this (keeps the marker non-adjacent). */
 const MIN_ECC_DEG = 1.5;
+/** Frame deltas above this multiple of the display's frame interval count as dropped. */
+const DROP_FACTOR = 1.5;
+
+const HIT_COLOR = 0x88c0d0;
+const MISS_COLOR = 0xbf616a;
+const BREACH_COLOR = 0xd0677a;
 
 interface SessionResult {
   threshold: number | null;
@@ -28,11 +37,25 @@ interface SessionResult {
   catches: number;
   xp: number;
   totalXp: number;
+  waves: number;
+  totalFrames: number;
+  droppedFrames: number;
+}
+
+interface WaveRecap {
+  wave: number;
+  hits: number;
+  misses: number;
+  bonus: number;
+  perfect: boolean;
+  breached: boolean;
 }
 
 interface LiveState {
   staircase: Staircase;
   renderer: GaborRenderer;
+  fx: FxLayer;
+  sfx: Sfx;
   profile: ProfileRow;
   cpd: number;
   plannedTrials: number;
@@ -43,6 +66,13 @@ interface LiveState {
   combo: number;
   lapses: number;
   catches: number;
+  shield: number;
+  waveHits: number;
+  waveMisses: number;
+  wavesCleared: number;
+  lastFrameAt: number | null;
+  totalFrames: number;
+  droppedFrames: number;
   trialLog: Omit<TrialRow, "sessionId" | "id">[];
   current: {
     gabor: GaborParams;
@@ -65,7 +95,11 @@ export function SignalHunter() {
   const [plannedTrials, setPlannedTrials] = useState(40);
   const [maxEccDeg, setMaxEccDeg] = useState(8);
   const [phase, setPhase] = useState<"setup" | "playing" | "done">("setup");
-  const [hud, setHud] = useState({ score: 0, combo: 0, trial: 0, timeFrac: 1 });
+  const [hud, setHud] = useState({
+    score: 0, combo: 0, trial: 0, timeFrac: 1, wave: 1, shield: SHIELD_MAX,
+  });
+  const [banner, setBanner] = useState<WaveRecap | null>(null);
+  const [soundOn, setSoundOn] = useState(() => new Sfx().enabled);
   const [result, setResult] = useState<SessionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -117,6 +151,8 @@ export function SignalHunter() {
       answered: false,
     };
     s.nextTrialAt = null;
+    setBanner(null);
+    s.sfx.tick(); // audio-only onset cue: no location, no answer information
   }
 
   function settleTrial(s: LiveState, correct: boolean, rtMs: number | null) {
@@ -131,11 +167,32 @@ export function SignalHunter() {
       s.staircase.update(correct);
       s.scoredTrials++;
     }
+    // Fidelity note: everything below runs AFTER the trial settles — the next render()
+    // clears the Gabor, so overlay effects never coincide with a live stimulus.
+    const dpr = window.devicePixelRatio || 1;
+    const fxX = c.gabor.xPx / dpr;
+    const fxY = c.gabor.yPx / dpr;
+    let gained = 0;
     if (correct) {
       s.combo++;
-      s.score += Math.round(100 * (1 + 0.1 * (s.combo - 1)));
+      gained = Math.round(100 * (1 + 0.1 * (s.combo - 1)));
+      s.score += gained;
+      s.waveHits++;
+      s.fx.burst(fxX, fxY, HIT_COLOR);
+      s.fx.pop(fxX, fxY, `+${gained}`, HIT_COLOR);
+      s.sfx.hit(s.combo);
     } else {
       s.combo = 0;
+      s.waveMisses++;
+      const hadShield = s.shield > 0;
+      s.shield = Math.max(0, s.shield - 1);
+      if (hadShield && s.shield === 0) {
+        s.fx.edgeFlash(BREACH_COLOR);
+        s.sfx.breach();
+      } else {
+        s.fx.edgeFlash(MISS_COLOR);
+        s.sfx.miss();
+      }
     }
     s.xp += trialXp(c.gabor.contrast, correct, c.isCatch);
     s.trialLog.push({
@@ -155,6 +212,28 @@ export function SignalHunter() {
     s.current = null;
     if (finished) {
       void endSession(s);
+      return;
+    }
+    if (isWaveBoundary(s.scoredTrials)) {
+      // Wave complete: bonus, recap banner, longer pause (micro-break). Cosmetic only —
+      // the staircase and trial schedule are untouched.
+      const perfect = s.waveMisses === 0;
+      const bonus = waveBonus(s.shield, perfect);
+      s.score += bonus;
+      s.wavesCleared++;
+      setBanner({
+        wave: s.wavesCleared,
+        hits: s.waveHits,
+        misses: s.waveMisses,
+        bonus,
+        perfect,
+        breached: s.shield === 0,
+      });
+      s.sfx.waveClear();
+      s.shield = SHIELD_MAX;
+      s.waveHits = 0;
+      s.waveMisses = 0;
+      s.nextTrialAt = performance.now() + WAVE_BREAK_MS;
     } else {
       s.nextTrialAt = performance.now() + INTERTRIAL_MS;
     }
@@ -190,11 +269,17 @@ export function SignalHunter() {
       trialCount: s.trialLog.length,
       score: s.score,
       xp: s.xp,
+      waves: s.wavesCleared,
+      totalFrames: s.totalFrames,
+      droppedFrames: s.droppedFrames,
     });
     await db.trials.bulkAdd(s.trialLog.map((t) => ({ ...t, sessionId: sessionId as number })));
     const totalXp = (await db.sessions.toArray()).reduce((a, row) => a + (row.xp ?? 0), 0);
 
     s.renderer.dispose();
+    s.fx.dispose();
+    s.sfx.dispose();
+    setBanner(null);
     setResult({
       threshold,
       logCS,
@@ -204,6 +289,9 @@ export function SignalHunter() {
       catches: s.catches,
       xp: s.xp,
       totalXp,
+      waves: s.wavesCleared,
+      totalFrames: s.totalFrames,
+      droppedFrames: s.droppedFrames,
     });
     live.current = null;
     setPhase("done");
@@ -224,6 +312,12 @@ export function SignalHunter() {
       setError(String(e));
       return;
     }
+    const sfx = new Sfx();
+    sfx.setEnabled(soundOn);
+    sfx.unlock(); // we are inside the Start-button gesture
+    const fx = new FxLayer();
+    const host = canvasRef.current.parentElement;
+    if (host) void fx.init(host); // async; effects before ready are dropped harmlessly
     const s: LiveState = {
       staircase: new Staircase({
         startValue: 0.4,
@@ -233,6 +327,8 @@ export function SignalHunter() {
         thresholdReversals: 6,
       }),
       renderer,
+      fx,
+      sfx,
       profile,
       cpd,
       plannedTrials,
@@ -243,6 +339,13 @@ export function SignalHunter() {
       combo: 0,
       lapses: 0,
       catches: 0,
+      shield: SHIELD_MAX,
+      waveHits: 0,
+      waveMisses: 0,
+      wavesCleared: 0,
+      lastFrameAt: null,
+      totalFrames: 0,
+      droppedFrames: 0,
       trialLog: [],
       current: null,
       nextTrialAt: performance.now() + 800,
@@ -257,6 +360,14 @@ export function SignalHunter() {
       if (!st) return;
       st.renderer.resize();
       const now = performance.now();
+
+      // Frame-timing fidelity monitor: dropped frames invalidate temporal dithering.
+      if (st.lastFrameAt !== null) {
+        st.totalFrames++;
+        const expected = 1000 / st.profile.refreshRateHz;
+        if (now - st.lastFrameAt > DROP_FACTOR * expected) st.droppedFrames++;
+      }
+      st.lastFrameAt = now;
 
       if (st.current && !st.current.answered && now > st.current.deadline) {
         settleTrial(st, false, null); // timeout = miss
@@ -276,6 +387,8 @@ export function SignalHunter() {
           timeFrac: stc.current
             ? Math.max(0, (stc.current.deadline - now) / RESPONSE_WINDOW_MS)
             : 1,
+          wave: waveIndex(stc.scoredTrials),
+          shield: stc.shield,
         });
         stc.raf = requestAnimationFrame(loop);
       }
@@ -302,6 +415,8 @@ export function SignalHunter() {
       if (s) {
         cancelAnimationFrame(s.raf);
         s.renderer.dispose();
+        s.fx.dispose();
+        s.sfx.dispose();
         live.current = null;
       }
     },
@@ -347,6 +462,13 @@ export function SignalHunter() {
                 <input type="number" min="3" max="20" step="1" value={maxEccDeg}
                   onInput={(e) => setMaxEccDeg(parseFloat(e.currentTarget.value) || 8)} />
               </label>
+              <label>
+                {" "}<input type="checkbox" checked={soundOn}
+                  onChange={(e) => {
+                    setSoundOn(e.currentTarget.checked);
+                    new Sfx().setEnabled(e.currentTarget.checked);
+                  }} /> Sound
+              </label>
               <p><button onClick={start}>Start</button></p>
               <p class="muted">
                 Start low (1–3 cpd) while acuity is limited; raise frequency as thresholds
@@ -367,11 +489,30 @@ export function SignalHunter() {
         />
         <div class="fixation" aria-hidden="true">+</div>
         <div class="hud">
+          <span>wave {hud.wave}</span>
+          <span class="shield" aria-label={`shield ${hud.shield} of ${SHIELD_MAX}`}>
+            {Array.from({ length: SHIELD_MAX }, (_, i) => (
+              <i key={i} class={i < hud.shield ? "pip on" : "pip"} />
+            ))}
+          </span>
           <span>score {hud.score}</span>
           <span>combo ×{hud.combo}</span>
           <span>trial {hud.trial}/{plannedTrials}</span>
           <div class="timebar"><div style={{ width: `${hud.timeFrac * 100}%` }} /></div>
         </div>
+        {banner && (
+          <div class="wavebanner">
+            <div class="wavetitle">
+              WAVE {banner.wave} {banner.breached ? "BREACHED" : "CLEARED"}
+            </div>
+            <div class="wavestats">
+              {banner.hits}/{banner.hits + banner.misses} signals
+              {banner.perfect && <strong> · PERFECT</strong>}
+              {banner.bonus > 0 && <> · bonus +{banner.bonus}</>}
+            </div>
+            <div class="muted">next wave incoming…</div>
+          </div>
+        )}
       </div>
 
       {phase === "done" && result && (
@@ -385,6 +526,7 @@ export function SignalHunter() {
               {result.logCS !== null && <> (logCS {result.logCS.toFixed(2)})</>}
             </li>
             <li>Trials: {result.trials} ({result.catches} catch, {result.lapses} lapses)</li>
+            <li>Waves cleared: {result.waves}</li>
             <li>
               XP earned: <strong>+{result.xp}</strong>{" "}
               {(() => {
@@ -404,6 +546,14 @@ export function SignalHunter() {
             <p class="warn">
               Several high-contrast misses — attention or patch slippage may have contaminated
               this run.
+            </p>
+          )}
+          {result.totalFrames > 0 && result.droppedFrames / result.totalFrames > 0.01 && (
+            <p class="warn">
+              {result.droppedFrames} of {result.totalFrames} frames ran long (&gt;
+              {((result.droppedFrames / result.totalFrames) * 100).toFixed(1)}%) — temporal
+              dithering may have been degraded; close background apps and treat this
+              session's threshold with caution.
             </p>
           )}
           <p>
