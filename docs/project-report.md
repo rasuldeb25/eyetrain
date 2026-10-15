@@ -257,6 +257,20 @@ banding) → profile saved to IndexedDB.
     start and at the envelope peak (level 2 = every draw). A live run logged, e.g., trial 4
     (3λ track): Pulse 1 → target 0.8955 + flankers 0.50 ×2; Pulse 2 → target 0.0000 +
     flankers 0.50 ×2; `uCount=3` in both pulses. The flankers never drop out.
+  - *Third escalation (2026-10-15): "logs say uCount=3 but the screen disagrees — audit the
+    shader loop for an overwrite and the Float32Array flattening for a missing 4·i offset."*
+    Both audited: the fragment loop accumulates (`L_sum += …`, no discard/return/early
+    exit) and the flattening writes every patch at explicit `4·i + k` offsets — neither
+    overwrite exists. Hardened anyway: the loop is now **branchless** (fixed trip count,
+    `on = i < uCount ? 1 : 0`, unused slots uploaded as contrast 0 / σ 1 every frame) so no
+    driver's handling of a dynamic `break` or uniform-dependent loop bound can drop a
+    patch. Added **`#/shader-test`** (linked from Home): the two pulses of a flanked trial
+    rendered as STATIC side-by-side frames by the real renderer, with no envelope or timing,
+    plus automatic framebuffer readback at each patch center. On this machine it shows two
+    patches in pulse 1, three in pulse 2, and PASSES (224/224/186/186 and
+    224/224/248/186 against 224/224/249/186). This page is the decisive test for any
+    device: if it passes but the game still "looks" exclusive, the issue is perceptual or
+    in the display path, not in the stimulus pipeline.
 - **Phase 4 slice 2 verification (2026-10-15)**: 42-trial session driven end-to-end (synthetic
     keys + pointer taps); waves advanced with shield depletion, recap banners and bonuses;
     bursts/pops rendered only during intertrial (screenshots confirm a blank overlay during

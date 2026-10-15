@@ -64,15 +64,20 @@ float hash(vec2 p) {
 }
 
 void main() {
-  float sum = 0.0;
+  // Strictly additive superposition: L_sum accumulates EVERY patch; nothing is assigned,
+  // discarded, or broken out of. The loop is branchless (fixed trip count, unused slots
+  // are uploaded with contrast 0 and sigma 1) so no driver's handling of a dynamic break
+  // or uniform-dependent loop bound can drop a patch.
+  float L_sum = 0.0;
   for (int i = 0; i < ${MAX_GABORS}; i++) {
-    if (i >= uCount) break;
+    float on = (i < uCount) ? 1.0 : 0.0;
     vec2 d = vPixel - uGaborA[i].xy;
-    float sigma = uGaborA[i].z;
+    float sigma = max(uGaborA[i].z, 1e-3);
     float xr = cos(uGaborB[i].x) * d.x + sin(uGaborB[i].x) * d.y;
     float env = exp(-dot(d, d) / (2.0 * sigma * sigma));
-    sum += uGaborB[i].z * env * cos(6.28318530718 * uGaborA[i].w * xr + uGaborB[i].y);
+    L_sum += on * uGaborB[i].z * env * cos(6.28318530718 * uGaborA[i].w * xr + uGaborB[i].y);
   }
+  float sum = L_sum;
   // Superposition in linear luminance, clamped to the displayable range around mean 0.5.
   float l = 0.5 * (1.0 + clamp(sum, -1.0, 1.0));
   // Inverse gamma, then dither quantization (TS reference: core/gamma.quantizeWithDither).
@@ -196,6 +201,11 @@ export class GaborRenderer {
       this.gaborB[4 * i + 2] = g.contrast;
       this.gaborB[4 * i + 3] = 0;
     }
+    // Unused slots: contrast 0, sigma 1 — inert in the branchless shader loop (never stale).
+    for (let i = gabors.length; i < MAX_GABORS; i++) {
+      this.gaborA.set([0, 0, 1, 0], 4 * i);
+      this.gaborB.set([0, 0, 0, 0], 4 * i);
+    }
 
     gl.useProgram(this.program);
     gl.uniform2f(this.loc["uResolution"]!, this.canvas.width, this.canvas.height);
@@ -207,8 +217,9 @@ export class GaborRenderer {
     // uGaborA[i] = (centerX, centerY, sigmaPx, cyclesPerPx); uGaborB[i] = (theta, phase,
     // contrast, 0). The shader sums contrast·envelope·carrier over ALL uCount patches in
     // linear luminance, then encodes + dithers once — strictly additive, no overwriting.
-    gl.uniform4fv(this.loc["uGaborA[0]"]!, this.gaborA, 0, 4 * gabors.length);
-    gl.uniform4fv(this.loc["uGaborB[0]"]!, this.gaborB, 0, 4 * gabors.length);
+    // Upload ALL slots every frame (used + inert) — the shader iterates all MAX_GABORS.
+    gl.uniform4fv(this.loc["uGaborA[0]"]!, this.gaborA);
+    gl.uniform4fv(this.loc["uGaborB[0]"]!, this.gaborB);
     const dbg = debugLevel();
     if (dbg > 0) {
       const desc = gabors

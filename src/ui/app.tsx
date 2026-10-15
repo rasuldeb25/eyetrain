@@ -6,6 +6,7 @@ import { SignalHunter } from "./signalHunter";
 import { FlankerRun } from "./flankerRun";
 import { Dashboard } from "./dashboard";
 import { ClinicalReport } from "./clinicalReport";
+import { ShaderTest } from "./shaderTest";
 
 const ROUTES: Record<string, () => JSX.Element> = {
   "#/": Home,
@@ -14,6 +15,7 @@ const ROUTES: Record<string, () => JSX.Element> = {
   "#/flanker": FlankerRun,
   "#/dashboard": Dashboard,
   "#/report": ClinicalReport,
+  "#/shader-test": ShaderTest,
 };
 
 export function App() {

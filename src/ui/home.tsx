@@ -48,6 +48,10 @@ export function Home() {
         </li>
         <li>Progress and exports for your optometrist: <a href="#/dashboard">Dashboard</a>.</li>
       </ol>
+      <p class="muted">
+        Diagnostics: <a href="#/shader-test">shader self-test</a> (static multi-patch render
+        with framebuffer readback).
+      </p>
     </div>
   );
 }
