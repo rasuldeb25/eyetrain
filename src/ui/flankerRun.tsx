@@ -37,6 +37,8 @@ import { GaborRenderer, type GaborParams } from "../render/gaborRenderer";
 import { FxLayer } from "../render/fxLayer";
 import { Preflight } from "./preflight";
 import { Sfx } from "./sfx";
+import { readPresets } from "./presets";
+import { PlanNav } from "./planNav";
 
 const GAP_MS = 350;
 const RESPONSE_WINDOW_MS = 2500;
@@ -166,8 +168,9 @@ function trialPhase(t: number): TrialPhase {
 export function FlankerRun() {
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [profileId, setProfileId] = useState<number | null>(null);
-  const [cpd, setCpd] = useState(2);
-  const [plannedTrials, setPlannedTrials] = useState(90);
+  const presets = readPresets();
+  const [cpd, setCpd] = useState(presets.cpd ?? 2);
+  const [plannedTrials, setPlannedTrials] = useState(presets.trials ?? 90);
   const [phase, setPhase] = useState<"setup" | "playing" | "done">("setup");
   const [hud, setHud] = useState({
     score: 0, combo: 0, trial: 0, timeFrac: 1, wave: 1, shield: SHIELD_MAX, stimOn: false,
@@ -838,6 +841,7 @@ export function FlankerRun() {
             <a href="#/dashboard">View progress →</a>{" "}
             <button onClick={() => { setPhase("setup"); setResult(null); }}>Run again</button>
           </p>
+          <PlanNav />
         </section>
       )}
     </div>

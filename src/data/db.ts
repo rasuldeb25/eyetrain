@@ -41,6 +41,8 @@ export interface SessionRow {
     spacingLambda?: number;
     /** Flanker Run: flanker contrast as a multiple of the current target contrast. */
     flankerFactor?: number;
+    /** Mode B2: frame-locked counterphase flicker rate actually used (Hz). */
+    flickerHz?: number;
   };
   /** Combined staircase threshold (Michelson contrast), if the run produced one. */
   threshold?: number;

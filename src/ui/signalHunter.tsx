@@ -16,6 +16,12 @@ import {
   sessionMinutes,
 } from "../core/progression";
 import { Preflight } from "./preflight";
+import { nearestFrameLockedRate, polarityAtFrame, type FrameLockedRate } from "../core/flicker";
+import { readPresets } from "./presets";
+import { PlanNav } from "./planNav";
+
+/** Mode B2 target counterphase rate; snapped to the nearest frame-locked R/2k. */
+const B2_TARGET_HZ = 7.5;
 import { cpdToCyclesPerPx, degToPx, isRenderable, pxToDeg } from "../core/visualAngle";
 import { levelProgress, trialXp } from "../core/progression";
 import { isWaveBoundary, SHIELD_MAX, waveBonus, waveIndex, WAVE_BREAK_MS } from "../core/waves";
@@ -112,6 +118,10 @@ interface LiveState {
   minutesBefore: number;
   breaksTaken: number;
   breakUntil: number | null;
+  /** Mode B2: frame-locked counterphase schedule; null in Mode A. */
+  flicker: FrameLockedRate | null;
+  /** Monotonic loop frame counter (drives flicker polarity — never wall-clock). */
+  frameIdx: number;
   lastFrameAt: number | null;
   totalFrames: number;
   droppedFrames: number;
@@ -128,6 +138,8 @@ interface LiveState {
     onsetAt: number;
     deadline: number;
     answered: boolean;
+    /** Loop frame index at the first rendered stimulus frame (Mode B2 flicker phase origin). */
+    onsetFrameIdx: number | null;
   } | null;
   nextTrialAt: number | null;
   startedAt: string;
@@ -137,8 +149,10 @@ interface LiveState {
 export function SignalHunter() {
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [profileId, setProfileId] = useState<number | null>(null);
-  const [cpd, setCpd] = useState(2);
-  const [plannedTrials, setPlannedTrials] = useState(80);
+  const presets = readPresets();
+  const [cpd, setCpd] = useState(presets.cpd ?? 2);
+  const [plannedTrials, setPlannedTrials] = useState(presets.trials ?? 80);
+  const [flickerB2, setFlickerB2] = useState(false);
   const [maxEccDeg, setMaxEccDeg] = useState(8);
   const [phase, setPhase] = useState<"setup" | "tutorial" | "playing" | "done">("setup");
   const [tutMsg, setTutMsg] = useState<TutFeedback | null>(null);
@@ -226,6 +240,7 @@ export function SignalHunter() {
         ? Number.POSITIVE_INFINITY
         : performance.now() + FIX_OFF_LEAD_MS + RESPONSE_WINDOW_MS,
       answered: false,
+      onsetFrameIdx: null,
     };
     s.nextTrialAt = null;
     setBanner(null);
@@ -374,11 +389,16 @@ export function SignalHunter() {
     const sessionId = await db.sessions.add({
       profileId: s.profile.id!,
       game: "signal-hunter",
-      mode: "A-monocular",
+      mode: s.flicker ? "B2-flicker" : "A-monocular",
       eyeCondition: eye,
       startedAt: s.startedAt,
       endedAt: new Date().toISOString(),
-      params: { cpd: s.cpd, sigmaDeg: 1 / s.cpd, plannedTrials: s.plannedTrials },
+      params: {
+        cpd: s.cpd,
+        sigmaDeg: 1 / s.cpd,
+        plannedTrials: s.plannedTrials,
+        flickerHz: s.flicker?.rateHz,
+      },
       threshold: threshold ?? undefined,
       thresholds: s.stairs.thresholds,
       logCS: logCS ?? undefined,
@@ -486,6 +506,8 @@ export function SignalHunter() {
       minutesBefore,
       breaksTaken: fatigueBreaksDue(minutesBefore),
       breakUntil: null,
+      flicker: flickerB2 ? nearestFrameLockedRate(B2_TARGET_HZ, profile.refreshRateHz) : null,
+      frameIdx: 0,
       lastFrameAt: null,
       totalFrames: 0,
       droppedFrames: 0,
@@ -505,6 +527,7 @@ export function SignalHunter() {
       const now = performance.now();
 
       // Frame-timing fidelity monitor: dropped frames invalidate temporal dithering.
+      st.frameIdx++;
       if (st.lastFrameAt !== null) {
         st.totalFrames++;
         const expected = 1000 / st.profile.refreshRateHz;
@@ -544,9 +567,24 @@ export function SignalHunter() {
             : 0
           : raisedCosine(now - cur.onsetAt);
         fixOff = !st.tutorial && now <= cur.onsetAt + STIM_TOTAL_MS;
-        st.renderer.render(
-          env > 0 ? [{ ...cur.gabor, contrast: cur.gabor.contrast * env }] : [],
-        );
+        if (env > 0) {
+          // Mode B2: counterphase flicker = carrier phase advanced by π on alternate
+          // half-cycles, k frames each, counted from the first rendered stimulus frame —
+          // frame-locked by construction (docs/phase2-math.md §8). Mode A: phase as drawn.
+          if (cur.onsetFrameIdx === null) cur.onsetFrameIdx = st.frameIdx;
+          const flip =
+            st.flicker !== null &&
+            polarityAtFrame(st.frameIdx - cur.onsetFrameIdx, st.flicker.framesPerHalfCycle) === -1;
+          st.renderer.render([
+            {
+              ...cur.gabor,
+              phaseRad: cur.gabor.phaseRad + (flip ? Math.PI : 0),
+              contrast: cur.gabor.contrast * env,
+            },
+          ]);
+        } else {
+          st.renderer.render([]);
+        }
       } else {
         st.renderer.render([]);
       }
@@ -654,6 +692,18 @@ export function SignalHunter() {
                     new Sfx().setEnabled(e.currentTarget.checked);
                   }} /> Sound
               </label>
+              <label class="block">
+                <input type="checkbox" checked={flickerB2}
+                  onChange={(e) => {
+                    setFlickerB2(e.currentTarget.checked);
+                    if (e.currentTarget.checked) setEye("OU");
+                  }} />{" "}
+                <strong>Mode B2</strong> — counterphase flicker at ~{B2_TARGET_HZ} Hz, both eyes
+                open, no patch <span class="muted">(experimental anti-suppression mode)</span>
+              </label>
+              {flickerB2 && eye !== "OU" && (
+                <p class="warn">Mode B2 is a binocular mode — select OU in the check below.</p>
+              )}
               <Preflight profile={profiles.find((p) => p.id === profileId)} eye={eye}
                 onEye={setEye} distanceOk={distanceOk} onDistanceOk={setDistanceOk} />
               <p>
@@ -805,6 +855,7 @@ export function SignalHunter() {
             <a href="#/dashboard">View progress →</a>{" "}
             <button onClick={() => { setPhase("setup"); setResult(null); }}>Play again</button>
           </p>
+          <PlanNav />
         </section>
       )}
     </div>

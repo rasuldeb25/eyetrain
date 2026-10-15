@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from "preact/hooks";
 import { db, type SessionRow } from "../data/db";
+import { lastBackupAt } from "../data/backup";
 import {
   currentStreak,
   DAILY_CAP_MIN,
@@ -78,6 +79,17 @@ export function TodayPanel() {
           </div>
         </div>
       </div>
+      {sessions.length > 0 && (() => {
+        const last = lastBackupAt();
+        const stale = last === null || Date.now() - last.getTime() > 7 * 86_400_000;
+        return stale ? (
+          <p class="warn">
+            {last === null ? "No backup yet" : `Last backup ${last.toLocaleDateString()}`} —
+            your training record lives only in this browser.{" "}
+            <a href="#/dashboard">Back it up</a>.
+          </p>
+        ) : null;
+      })()}
       {overCap && (
         <p class="warn">
           Over the {DAILY_CAP_MIN}-minute daily cap — more is not better; rest the eye until

@@ -282,6 +282,30 @@ banding) → profile saved to IndexedDB.
     let a saccade land on them, defeating the eccentricity control; Flanker Run's stimulus
     is at fixation, so the longer pulse is saccade-safe. Per-trial `flanker_contrast` and
     `stim_ms` already log the realized values.
+- **Phase 4 slice 5 (2026-10-15) — data safety, Mode B2, session scheduler:**
+  - **Backup/restore** (`src/data/backup.ts`): one-click JSON snapshot of profiles,
+    sessions and trials from the Dashboard, plus a restore that MERGES — profiles match by
+    name, sessions by (game, startedAt), restored trials are re-pointed at the new session
+    ids — so restoring the same file twice never duplicates (verified: three restores of
+    one snapshot → 1 session / 2 trials, third restore "1 skipped"). The Home panel warns
+    when the last backup is older than 7 days. This is the interim answer to §7.3's
+    "browser data wipe destroys the clinical record" until the sync service exists.
+  - **Mode B2 — frame-locked counterphase flicker** in Signal Hunter (first binocular,
+    no-hardware anti-suppression mode; experimental, §3): a setup toggle that forces the
+    OU eye condition and flips the carrier phase by π every k frames, k from
+    `core/flicker.nearestFrameLockedRate(7.5 Hz, R)` (60 Hz → 7.5 Hz, k = 4), counted
+    from the first rendered stimulus frame — frame-locked by construction, never
+    wall-clock. Sessions persist `mode: "B2-flicker"` and `params.flickerHz`. Verified
+    live: session row `B2-flicker / OU / 7.5 Hz`. The frame monitor matters doubly here —
+    dropped frames break the flicker schedule, and the end-screen warning covers it.
+  - **Session scheduler** (`#/session`, `core/plan.ts` tested): pick a template
+    (Standard ≈30 min: contrast 2 cpd → crowding → contrast 4 cpd; Contrast focus;
+    Crowding focus); each block opens its game with presets via route query
+    (`#/play?cpd=4&trials=80&plan=1`), and the game's done screen advances the plan and
+    offers the next block. Router keys pages by full hash so same-route blocks remount
+    with fresh presets. Verified live: plan start → Signal Hunter preset 2 cpd / 80 trials
+    → done screen "Next block 2/3: Flanker Run @ 2 cpd →", plan index advanced.
+  - 106 unit tests + tsc + build green.
 - **Phase 4 slice 2 verification (2026-10-15)**: 42-trial session driven end-to-end (synthetic
     keys + pointer taps); waves advanced with shield depletion, recap banners and bonuses;
     bursts/pops rendered only during intertrial (screenshots confirm a blank overlay during
@@ -416,7 +440,8 @@ trial-to-trial variety).
 | 2 | Signal Hunter juice pass: PixiJS layer around (never over) the stimulus, WebAudio, waves/shield, frame-timing fidelity monitor + live-session verification | engagement | **done 2026-10-15** |
 | 3 | Flanker Run (3-track Polat topology, 2IFC) + interleaved staircases (block-permuted), raised-cosine presentation envelope, foveal/parafoveal tracks, multi-patch single-pass shader, eye-condition preflight | both | **done 2026-10-15** |
 | 4 | Fatigue break prompts (20-20-20), Weibull MLE fitter + bootstrap CI + response bias, clinical composite metrics (AULCSF/IOR/BSR/FI/CR), printable one-page optometrist report (#/report) | clinical | **done 2026-10-15** |
-| 5+ | Mode B (start with B2 flicker — no fusion-skill barrier; B1 split-field after a manual free-fusion feasibility test), Beat Align, variety scheduler | both | backlog |
+| 5 | JSON backup/restore with merge, Mode B2 frame-locked counterphase flicker (binocular, experimental), session scheduler with block presets | both | **done 2026-10-15** |
+| 6+ | Mode B1 split-field after a manual free-fusion feasibility test, Beat Align (Vernier), Swarm Keeper (MOT), PWA service worker, sync service, Capacitor/Android, Docker deploy | both | backlog |
 
 Rationale for the order: slice 1 was pure data/UI (zero rendering risk, immediate daily-goal
 value); the juice pass is isolated in its own slice **because** it is the one piece of work
