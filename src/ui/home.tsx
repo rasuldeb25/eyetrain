@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { db, type ProfileRow } from "../data/db";
 import { pixelsPerDegree } from "../core/visualAngle";
+import { TodayPanel } from "./todayPanel";
 
 export function Home() {
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
@@ -15,6 +16,8 @@ export function Home() {
         Personal vision-training tool — perceptual learning for refractive amblyopia.
         Experimental; use alongside, not instead of, professional eye care.
       </p>
+
+      <TodayPanel />
 
       <h2>Calibrated devices</h2>
       {profiles.length === 0 ? (

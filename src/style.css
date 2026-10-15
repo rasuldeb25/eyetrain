@@ -124,6 +124,55 @@ input[type="range"] { max-width: none; width: 100%; }
 }
 .timebar > div { height: 100%; background: var(--accent); }
 
+/* Central fixation marker: DOM overlay so stimulus pixels stay untouched. Dim and small —
+   it must anchor gaze without acting as a high-contrast distractor near threshold targets
+   (targets never spawn within MIN_ECC_DEG of it). */
+.fixation {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Today panel */
+.today { margin: 12px 0 4px; }
+.todayrow { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.ring { width: 128px; height: 128px; flex: none; }
+.ringtrack { fill: none; stroke: #1c2230; stroke-width: 10; }
+.ringfill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+.ringfill.done { stroke: #a3be8c; }
+.ringnum {
+  fill: var(--fg);
+  font-size: 30px;
+  text-anchor: middle;
+  font-variant-numeric: tabular-nums;
+}
+.ringlabel { fill: var(--muted); font-size: 13px; text-anchor: middle; }
+.todaystats { display: flex; flex-direction: column; gap: 6px; min-width: 180px; }
+.xpbar {
+  width: 100%;
+  max-width: 220px;
+  height: 6px;
+  background: #1c2230;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.xpbar > div { height: 100%; background: var(--accent); }
+.sectors { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.sectors th, .sectors td { text-align: left; padding: 3px 14px 3px 0; }
+.sectors th { color: var(--muted); font-weight: normal; font-size: 0.9em; }
+
 /* Charts */
 .chart { width: 100%; max-width: 560px; height: auto; display: block; margin: 8px 0; }
 .chart .axis { stroke: #2c3446; stroke-width: 1; }

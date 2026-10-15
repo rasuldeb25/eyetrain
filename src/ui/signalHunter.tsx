@@ -8,13 +8,16 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { db, type ProfileRow, type TrialRow } from "../data/db";
 import { Staircase } from "../core/staircase";
-import { cpdToCyclesPerPx, degToPx, isRenderable } from "../core/visualAngle";
+import { cpdToCyclesPerPx, degToPx, isRenderable, pxToDeg } from "../core/visualAngle";
+import { levelProgress, trialXp } from "../core/progression";
 import { GaborRenderer, type GaborParams } from "../render/gaborRenderer";
 
 const RESPONSE_WINDOW_MS = 3000;
 const INTERTRIAL_MS = 600;
 const CATCH_RATE = 0.1;
 const CATCH_CONTRAST = 0.8;
+/** Targets never appear closer to fixation than this (keeps the marker non-adjacent). */
+const MIN_ECC_DEG = 1.5;
 
 interface SessionResult {
   threshold: number | null;
@@ -23,6 +26,8 @@ interface SessionResult {
   trials: number;
   lapses: number;
   catches: number;
+  xp: number;
+  totalXp: number;
 }
 
 interface LiveState {
@@ -31,8 +36,10 @@ interface LiveState {
   profile: ProfileRow;
   cpd: number;
   plannedTrials: number;
+  maxEccDeg: number;
   scoredTrials: number;
   score: number;
+  xp: number;
   combo: number;
   lapses: number;
   catches: number;
@@ -41,6 +48,7 @@ interface LiveState {
     gabor: GaborParams;
     isCatch: boolean;
     thetaSign: 1 | -1;
+    eccDeg: number;
     shownAt: number;
     deadline: number;
     answered: boolean;
@@ -55,6 +63,7 @@ export function SignalHunter() {
   const [profileId, setProfileId] = useState<number | null>(null);
   const [cpd, setCpd] = useState(2);
   const [plannedTrials, setPlannedTrials] = useState(40);
+  const [maxEccDeg, setMaxEccDeg] = useState(8);
   const [phase, setPhase] = useState<"setup" | "playing" | "done">("setup");
   const [hud, setHud] = useState({ score: 0, combo: 0, trial: 0, timeFrac: 1 });
   const [result, setResult] = useState<SessionResult | null>(null);
@@ -79,8 +88,17 @@ export function SignalHunter() {
     const margin = sigmaPx * 4 + 10;
     const w = s.renderer.widthPx;
     const h = s.renderer.heightPx;
-    const xPx = margin + Math.random() * Math.max(1, w - 2 * margin);
-    const yPx = margin + Math.random() * Math.max(1, h - 2 * margin);
+    // Place the target in an annulus around central fixation: controlled eccentricity
+    // (logged per trial) instead of uniform-anywhere. Radius is capped so the whole
+    // envelope stays on screen; sampling is uniform over the annulus area.
+    const rMaxFit = Math.max(1, Math.min(w, h) / 2 - margin);
+    const rMax = Math.min(degToPx(s.maxEccDeg, s.profile), rMaxFit);
+    const rMin = Math.min(degToPx(MIN_ECC_DEG, s.profile), rMax * 0.5);
+    const rPx = Math.sqrt(Math.random() * (rMax * rMax - rMin * rMin) + rMin * rMin);
+    const phi = Math.random() * 2 * Math.PI;
+    const xPx = w / 2 + rPx * Math.cos(phi);
+    const yPx = h / 2 + rPx * Math.sin(phi);
+    const eccDeg = pxToDeg(rPx, s.profile);
     s.current = {
       gabor: {
         xPx,
@@ -93,6 +111,7 @@ export function SignalHunter() {
       },
       isCatch,
       thetaSign,
+      eccDeg,
       shownAt: performance.now(),
       deadline: performance.now() + RESPONSE_WINDOW_MS,
       answered: false,
@@ -118,6 +137,7 @@ export function SignalHunter() {
     } else {
       s.combo = 0;
     }
+    s.xp += trialXp(c.gabor.contrast, correct, c.isCatch);
     s.trialLog.push({
       index: s.trialLog.length,
       value: c.gabor.contrast,
@@ -127,6 +147,7 @@ export function SignalHunter() {
       thetaDeg: c.thetaSign * 45,
       xPx: Math.round(c.gabor.xPx),
       yPx: Math.round(c.gabor.yPx),
+      eccDeg: Math.round(c.eccDeg * 100) / 100,
       at: new Date().toISOString(),
     });
 
@@ -168,8 +189,10 @@ export function SignalHunter() {
       logCS: logCS ?? undefined,
       trialCount: s.trialLog.length,
       score: s.score,
+      xp: s.xp,
     });
     await db.trials.bulkAdd(s.trialLog.map((t) => ({ ...t, sessionId: sessionId as number })));
+    const totalXp = (await db.sessions.toArray()).reduce((a, row) => a + (row.xp ?? 0), 0);
 
     s.renderer.dispose();
     setResult({
@@ -179,6 +202,8 @@ export function SignalHunter() {
       trials: s.trialLog.length,
       lapses: s.lapses,
       catches: s.catches,
+      xp: s.xp,
+      totalXp,
     });
     live.current = null;
     setPhase("done");
@@ -211,8 +236,10 @@ export function SignalHunter() {
       profile,
       cpd,
       plannedTrials,
+      maxEccDeg,
       scoredTrials: 0,
       score: 0,
+      xp: 0,
       combo: 0,
       lapses: 0,
       catches: 0,
@@ -287,9 +314,9 @@ export function SignalHunter() {
         <section>
           <h1>Signal Hunter</h1>
           <p class="muted">
-            Mode A: patch your <strong>left</strong> eye now. A faint tilted patch will appear —
-            press ← if it tilts left (\\), → if it tilts right (/). On touch screens tap the
-            left/right half.
+            Mode A: patch your <strong>left</strong> eye now. Keep your gaze on the central
+            cross; a faint tilted patch will appear around it — press ← if it tilts left (\\),
+            → if it tilts right (/). On touch screens tap the left/right half.
           </p>
           {profiles.length === 0 ? (
             <p>
@@ -315,6 +342,11 @@ export function SignalHunter() {
                 <input type="number" min="20" max="120" step="10" value={plannedTrials}
                   onInput={(e) => setPlannedTrials(parseInt(e.currentTarget.value) || 40)} />
               </label>
+              <label>
+                {" "}Max eccentricity (°):{" "}
+                <input type="number" min="3" max="20" step="1" value={maxEccDeg}
+                  onInput={(e) => setMaxEccDeg(parseFloat(e.currentTarget.value) || 8)} />
+              </label>
               <p><button onClick={start}>Start</button></p>
               <p class="muted">
                 Start low (1–3 cpd) while acuity is limited; raise frequency as thresholds
@@ -333,6 +365,7 @@ export function SignalHunter() {
             answer(e.clientX - rect.left < rect.width / 2 ? -1 : 1);
           }}
         />
+        <div class="fixation" aria-hidden="true">+</div>
         <div class="hud">
           <span>score {hud.score}</span>
           <span>combo ×{hud.combo}</span>
@@ -352,6 +385,20 @@ export function SignalHunter() {
               {result.logCS !== null && <> (logCS {result.logCS.toFixed(2)})</>}
             </li>
             <li>Trials: {result.trials} ({result.catches} catch, {result.lapses} lapses)</li>
+            <li>
+              XP earned: <strong>+{result.xp}</strong>{" "}
+              {(() => {
+                const p = levelProgress(result.totalXp);
+                const before = levelProgress(result.totalXp - result.xp);
+                return (
+                  <>
+                    — level {p.level}
+                    {p.level > before.level && <strong> (level up!)</strong>}
+                    , {p.intoLevel}/{p.needed} to next
+                  </>
+                );
+              })()}
+            </li>
           </ul>
           {result.lapses > 1 && (
             <p class="warn">

@@ -1,6 +1,12 @@
 # EyeTrain — Full Project Report (for external review)
 
-*Status date: 2026-10-12 · Repo: github.com/rasuldeb25/eyetrain · Local path: C:\dev\eyetrain*
+*Status date: 2026-10-15 (orig. 2026-10-12) · Repo: github.com/rasuldeb25/eyetrain · Local path: C:\dev\eyetrain*
+
+> **2026-10-15 update:** Phase 4 direction decided — a **merged track** (engagement and
+> clinical gaps interleaved in slices, see §11). Slice 1 is implemented: meta-progression
+> (XP/levels/streak), daily dosage goal ring, central fixation marker, and
+> eccentricity-controlled target placement with per-trial logging. Sections 6–8 are annotated
+> where this changes them.
 
 This document is self-contained: it gives a reviewing agent (or human) everything needed to
 critique the project without reading the codebase first. Sections 7–9 are the honest
@@ -110,6 +116,18 @@ banding) → profile saved to IndexedDB.
   measure lapse rate; combo/score counter; session ends at 10 reversals or N trials.
 - Dashboard: logCS trend across sessions, per-session staircase track (hits/misses), CSV
   export of every trial.
+- **Phase 4 slice 1 (2026-10-15):**
+  - `src/core/progression.ts` (pure, 21 tests): difficulty-weighted trial XP
+    (10 × (1 + logCS) per correct trial), quadratic level curve, training streak with
+    2-rest-day tolerance (matches the 5 days/week prescription), Monday-based weekly day
+    count, session-minutes and per-frequency sector stats.
+  - Home page "Today" panel: 30-min dosage goal ring (warns above the 45-min cap), streak,
+    days-this-week vs 5, level/XP bar, frequency-sector table (sessions + best logCS per cpd).
+  - Signal Hunter: central fixation marker (dim DOM overlay — stimulus pixels untouched);
+    targets now placed uniformly in an annulus of 1.5° to a configurable max eccentricity
+    (default 8°) around fixation; eccentricity logged per trial and exported in CSV
+    (`ecc_deg` column); XP earned per session persisted and shown with level progress on the
+    end screen.
 - **End-to-end verified in a real Chrome session**: calibration flow walked through; a full
   45-trial session driven by a random responder correctly converged the staircase to ceiling
   (threshold 0.97 — the expected outcome for chance performance), persisted session + 45
@@ -123,9 +141,9 @@ not a game.** The owner's verdict: "simple and boring." Specifically missing:
 - No motion: the Gabor sits still; nothing approaches, dodges, or threatens.
 - No consequence loop: no lives/health/waves; a miss just zeroes the combo.
 - No juice: no particles, hit-flash, screen shake, slow-mo, sound, or music.
-- No meta-progression: no XP, levels, unlocks, streaks, daily goals, or variety between
-  sessions. Retention currently depends entirely on discipline — the one thing gamification
-  was supposed to replace.
+- ~~No meta-progression: no XP, levels, unlocks, streaks, daily goals~~ *(closed in slice 1,
+  2026-10-15: XP/levels/streak/daily goal ring shipped)* — but still no variety between
+  sessions and no unlocks; in-game juice (motion, consequence, audio) remains absent.
 - No enemy/threat fiction at all; the "survival arena" pitched in Phase 1 was not built.
 - Only 1 of the 4 designed games exists (missing: Flanker Run / crowding runner,
   Beat Align / Vernier rhythm, Swarm Keeper / MOT tracking).
@@ -145,11 +163,13 @@ top of it.
 - No Mode B at all yet (B1 split-field renderer + nonius locks unbuilt; B2 flicker module
   exists in math only; B3 is just a docs concept).
 - No Vernier or crowding tasks (cores exist: `polat.ts` is wired and tested, unused).
-- Stimulus eccentricity is uncontrolled (random position; should log/limit degrees from
-  center; no fixation marker or fixation enforcement).
+- ~~Stimulus eccentricity is uncontrolled~~ *(closed in slice 1, 2026-10-15: fixation marker,
+  annulus placement with configurable max eccentricity, per-trial `ecc_deg` logging; gaze
+  enforcement remains impossible without an eye tracker — honor system)*.
 - Threshold fallback (geometric mean of last 10 values when staircase doesn't converge) is
   crude; no psychometric (QUEST/Weibull) fit; no test-retest reliability view.
-- No session timer/dosage tracking against the 30–45 min/day prescription; no break prompts.
+- ~~No session timer/dosage tracking against the 30–45 min/day prescription~~ *(closed in
+  slice 1: daily goal ring + over-cap warning)*; in-session break prompts still missing.
 
 **7.3 Engineering gaps**
 - PWA incomplete: manifest only, **no service worker** → not installable/offline yet.
@@ -211,3 +231,26 @@ npm run dev     # then: Calibrate → Play → Dashboard
 
 Key docs: `docs/phase1-brief.md` (strategy), `docs/phase2-math.md` (all formulas),
 `docs/calibration.md` (user-facing calibration procedure).
+
+---
+
+## 11. Phase 4 plan — merged track (agreed 2026-10-15)
+
+Decision on §9 Q1: **not either/or.** Engagement and clinical work interleave in slices; each
+slice ships independently so daily training never waits on a big-bang release. Several items
+serve both tracks at once (dosage ring = gamification *and* prescription tracking; Flanker
+Run = variety *and* the missing crowding task; interleaved staircases = clinical rigor *and*
+trial-to-trial variety).
+
+| Slice | Contents | Track | Status |
+|---|---|---|---|
+| 1 | Meta-progression (XP/levels/streak), dosage goal ring, fixation marker + eccentricity control & logging | both | **done 2026-10-15** |
+| 2 | Signal Hunter juice pass: PixiJS layer around (never over) the stimulus, WebAudio, enemy fiction, waves/lives — followed by mandatory fidelity re-verification (dither sweep, frame-timing check) | engagement | next |
+| 3 | Flanker Run (crowding game on `polat.ts`) + interleaved staircases | both | planned |
+| 4 | Break prompts, QUEST/psychometric fit evaluation, printable optometrist report | clinical | planned |
+| 5+ | Mode B (start with B2 flicker — no fusion-skill barrier; B1 split-field after a manual free-fusion feasibility test), Beat Align, variety scheduler | both | backlog |
+
+Rationale for the order: slice 1 was pure data/UI (zero rendering risk, immediate daily-goal
+value); the juice pass is isolated in its own slice **because** it is the one piece of work
+that can silently violate the fidelity constraint (§7.1), so it gets focused verification;
+Flanker Run arrives once the juice/audio plumbing exists to reuse.

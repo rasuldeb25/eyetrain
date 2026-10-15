@@ -31,6 +31,8 @@ export interface SessionRow {
   logCS?: number;
   trialCount: number;
   score: number;
+  /** Meta-progression XP earned this session (derivable from trials; stored for display). */
+  xp?: number;
 }
 
 export interface TrialRow {
@@ -46,6 +48,8 @@ export interface TrialRow {
   thetaDeg: number;
   xPx: number;
   yPx: number;
+  /** Target eccentricity: degrees of visual angle from the central fixation marker. */
+  eccDeg?: number;
   at: string; // ISO
 }
 
@@ -67,7 +71,7 @@ export async function exportCsv(): Promise<string> {
   const byId = new Map(sessions.map((s) => [s.id!, s]));
   const trials = await db.trials.toArray();
   const header =
-    "session_id,game,mode,started_at,cpd,trial_index,contrast,correct,rt_ms,is_catch,theta_deg";
+    "session_id,game,mode,started_at,cpd,trial_index,contrast,correct,rt_ms,is_catch,theta_deg,ecc_deg";
   const lines = trials.map((t) => {
     const s = byId.get(t.sessionId);
     return [
@@ -82,6 +86,7 @@ export async function exportCsv(): Promise<string> {
       t.rtMs ?? "",
       t.isCatch ? 1 : 0,
       t.thetaDeg,
+      t.eccDeg?.toFixed(2) ?? "",
     ].join(",");
   });
   return [header, ...lines].join("\n");
