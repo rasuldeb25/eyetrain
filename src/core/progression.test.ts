@@ -8,6 +8,7 @@ import {
   levelProgress,
   sectorStats,
   sessionMinutes,
+  tiltTrialXp,
   trialXp,
   vernierTrialXp,
   weekOf,
@@ -44,6 +45,15 @@ describe("vernierTrialXp", () => {
     expect(vernierTrialXp(0.2, true, false)).toBe(30);
     expect(vernierTrialXp(20, true, true)).toBe(10);
     expect(vernierTrialXp(0.3, false, false)).toBe(0);
+  });
+});
+
+describe("tiltTrialXp", () => {
+  it("scales with tilt difficulty like the other XP curves", () => {
+    expect(tiltTrialXp(30, true, false)).toBe(10);
+    expect(tiltTrialXp(3, true, false)).toBe(20);
+    expect(tiltTrialXp(1, false, false)).toBe(0);
+    expect(tiltTrialXp(30, true, true)).toBe(10);
   });
 });
 

@@ -10,10 +10,14 @@
 > structure, frame-timing fidelity monitor — implemented and verified in a live Chrome
 > session. Sections 6–8 are annotated where this changes them.
 
-### Status at a glance (end of 2026-10-15)
+### Status at a glance (2026-10-16)
 
-**Stage: Phase 4 slice 5 of the merged track complete — the app is in daily clinical use
-on the owner's laptop.** Everything needed for the N-of-1 protocol exists and is verified:
+**Stage: Phase 4 slice 7 of the merged track complete — the app is in daily clinical use
+on the owner's laptop.** Since the 10-15 snapshot below: a third game (Beat Align, Vernier
+hyperacuity with a crowded track), TPDF dithering, Mode B2 re-anchored to the amblyopic
+eye's threshold, a Mode B1 fusion feasibility diagnostic, and an offline service worker
+(one v1.0 definition-of-done item closed). Games are now 3 of 4; the PWA row below is
+partly closed (installable/offline: yes; deployment and Android: no). Everything needed for the N-of-1 protocol exists and is verified:
 calibration, two psychophysical games (contrast at controlled eccentricity; lateral masking
 / crowding), block-permuted interleaved staircases with convergence-tuned steps, brief
 raised-cosine presentations, dosage/fatigue ergonomics, meta-progression and juice,
@@ -369,6 +373,39 @@ banding) → profile saved to IndexedDB.
     beats and `uCount=4` on crowded beats (two 0.8 bars + two 0.6 distractors at ±2λ);
     30-beat set ran to completion with both tracks persisted (see commit for the row).
     114 unit tests + tsc + build green.
+- **Phase 4 slice 7 (2026-10-16) — Mode B2 OD-anchoring, Mode B1 fusion diagnostic, PWA
+  offline** (second external directive, with corrections):
+  - **Mode B2 rework**: contrast is now HELD at clamp(1.5 × latest Mode-A OD threshold at
+    the session's cpd, 0.12–0.85; 0.25 with no history) so the flickering stimulus is never
+    below the amblyopic eye's threshold, and the two interleaved staircases run on the
+    **tilt from vertical** (30° → 1°, 0.25→0.08 log steps) with the same lean-left/right
+    controls. Sessions persist `params.b2Contrast`; `value`/`thetaDeg` carry the tilt;
+    `logCS` is omitted (not a contrast). **Correction to the directive's framing:** this
+    does not and cannot stop the fellow eye from doing the task — in B2 both eyes see the
+    same image, so any B2 threshold is a binocular (effectively better-eye) number. Its
+    real value is guaranteeing OD receives suprathreshold flicker stimulation; the report
+    treats B2 thresholds as engagement/adaptation data, not OD measurements. The
+    directive's "10 cpd binocular lock ring rendered via patch slots" was **dropped**: a
+    fusion lock only matters when the eyes see different images (B1); in B2 there is
+    nothing to lock, and 8 ring patches would exhaust the 8-slot shader budget.
+  - **`#/fusion-test` — Mode B1 feasibility diagnostic** (linked from Home): two framed
+    panels at a configurable separation (septum mode, or cross-fusion with the vergence
+    demand from `core/fusion.ts` shown and flagged beyond the 8° comfort ceiling); a
+    dichoptic nonius cross nudged with the arrow keys → heterophoria offset in degrees;
+    then an OS horizontal grating (contrast slider) vs an OD vertical grating at 1.0,
+    both through the stimulus renderer, saved as the dichoptic balance ratio on the
+    profile (`phoriaDegX/Y`, `dichopticBalanceRatio`, `fusionTestedAt`). Verified live:
+    nudge 3/2 px → 0.07°/0.05°, ratio 0.40 persisted.
+  - **PWA offline**: a zero-dependency Vite plugin emits `sw.js` at build time with the
+    real hashed bundle names precached (app shell + 10 chunks + CSS + manifest + icon),
+    cache-first for same-origin GETs, cached `index.html` for offline navigations, and a
+    hash-named cache that replaces older ones on activate. Registered in production
+    builds only. Verified on `vite preview`: registration active at scope `/`, cache
+    `eyetrain-a93de702` holding all 14 precached entries. One v1.0 definition-of-done item
+    closed.
+  - Verified live: B2 session with a seeded OD threshold of 0.10 persisted
+    `mode B2-flicker`, `b2Contrast 0.15`, 7.5 Hz, held contrast constant across all 35
+    trials, tilt values 30–45°. 115 unit tests + tsc + build green.
 - **Phase 4 slice 2 verification (2026-10-15)**: 42-trial session driven end-to-end (synthetic
     keys + pointer taps); waves advanced with shield depletion, recap banners and bonuses;
     bursts/pops rendered only during intertrial (screenshots confirm a blank overlay during
@@ -504,7 +541,9 @@ trial-to-trial variety).
 | 3 | Flanker Run (3-track Polat topology, 2IFC) + interleaved staircases (block-permuted), raised-cosine presentation envelope, foveal/parafoveal tracks, multi-patch single-pass shader, eye-condition preflight | both | **done 2026-10-15** |
 | 4 | Fatigue break prompts (20-20-20), Weibull MLE fitter + bootstrap CI + response bias, clinical composite metrics (AULCSF/IOR/BSR/FI/CR), printable one-page optometrist report (#/report) | clinical | **done 2026-10-15** |
 | 5 | JSON backup/restore with merge, Mode B2 frame-locked counterphase flicker (binocular, experimental), session scheduler with block presets | both | **done 2026-10-15** |
-| 6+ | Mode B1 split-field after a manual free-fusion feasibility test, Beat Align (Vernier), Swarm Keeper (MOT), PWA service worker, sync service, Capacitor/Android, Docker deploy | both | backlog |
+| 6 | Beat Align (Vernier + crowded Vernier), TPDF dither, Flanker 1.5× crowding target + meridional axis cycling | both | **done 2026-10-16** |
+| 7 | Mode B2 OD-anchored contrast + tilt staircase, `#/fusion-test` B1 feasibility diagnostic, PWA offline service worker | both | **done 2026-10-16** |
+| 8+ | Mode B1 split-field game (gated on the owner's fusion-test result), Swarm Keeper (MOT), sync service, Capacitor/Android, Docker deploy | both | backlog |
 
 Rationale for the order: slice 1 was pure data/UI (zero rendering risk, immediate daily-goal
 value); the juice pass is isolated in its own slice **because** it is the one piece of work

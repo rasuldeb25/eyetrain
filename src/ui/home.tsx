@@ -52,7 +52,8 @@ export function Home() {
       </ol>
       <p class="muted">
         Diagnostics: <a href="#/shader-test">shader self-test</a> (static multi-patch render
-        with framebuffer readback).
+        with framebuffer readback) · <a href="#/fusion-test">Mode B1 fusion test</a> (2-minute
+        septum / cross-fusion feasibility check, saves phoria and balance ratio).
       </p>
     </div>
   );

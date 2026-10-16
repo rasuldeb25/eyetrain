@@ -49,6 +49,16 @@ export function vernierTrialXp(offsetArcmin: number, correct: boolean, isCatch: 
   return Math.round(10 * (1 + difficulty));
 }
 
+/** Mode B2 tilt staircase start (deg from vertical); the tilt XP scale's "easy" reference. */
+export const TILT_XP_REF_DEG = 30;
+
+/** XP for a Mode B2 tilt trial: 10 × (1 + log10(30° / Δθ)) when correct. */
+export function tiltTrialXp(tiltDeg: number, correct: boolean, isCatch: boolean): number {
+  if (!correct) return 0;
+  if (isCatch) return 10;
+  return Math.round(10 * (1 + Math.max(0, Math.log10(TILT_XP_REF_DEG / Math.max(tiltDeg, 1e-3)))));
+}
+
 /** Total XP required to REACH level L (L ≥ 1). Level 1 = 0, 2 = 500, 3 = 1500, 4 = 3000… */
 export function xpForLevel(level: number): number {
   if (level < 1) throw new RangeError("level must be ≥ 1");

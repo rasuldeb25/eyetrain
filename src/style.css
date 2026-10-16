@@ -306,3 +306,20 @@ input[type="range"] { max-width: none; width: 100%; }
 .stpanel { flex: 1 1 300px; }
 .stpanel h2 { margin: 6px 0; font-size: 0.95rem; }
 .stcanvas { width: 100%; height: 240px; display: block; border: 1px solid #2c3446; }
+
+/* Fusion test */
+.fusionstage { position: relative; background: #808080; border-radius: 8px; overflow: hidden; margin: 10px 0; }
+.fusioncanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.fusionpanel {
+  position: absolute; top: 50%; left: 50%;
+  border: 6px solid #fff; box-sizing: border-box; box-shadow: inset 0 0 0 4px #000;
+}
+.fusionlabel { position: absolute; top: 4px; left: 8px; color: #fff; font-size: 12px; opacity: 0.8; }
+.fusiondivider { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgba(0,0,0,0.25); }
+.nonius { position: absolute; background: #000; }
+.nonius.v { width: 3px; height: 34%; left: calc(50% - 1.5px); }
+.nonius.v.top { top: 12%; }
+.nonius.v.bottom { bottom: 12%; }
+.nonius.h { height: 3px; width: 34%; top: calc(50% - 1.5px); }
+.nonius.h.left { left: 12%; }
+.nonius.h.right { right: 12%; }

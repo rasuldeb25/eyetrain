@@ -9,6 +9,7 @@ import { ClinicalReport } from "./clinicalReport";
 import { ShaderTest } from "./shaderTest";
 import { Session } from "./session";
 import { BeatAlign } from "./beatAlign";
+import { FusionTest } from "./fusionTest";
 
 const ROUTES: Record<string, () => JSX.Element> = {
   "#/": Home,
@@ -20,6 +21,7 @@ const ROUTES: Record<string, () => JSX.Element> = {
   "#/dashboard": Dashboard,
   "#/report": ClinicalReport,
   "#/shader-test": ShaderTest,
+  "#/fusion-test": FusionTest,
 };
 
 export function App() {

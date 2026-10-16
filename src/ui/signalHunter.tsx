@@ -22,8 +22,21 @@ import { PlanNav } from "./planNav";
 
 /** Mode B2 target counterphase rate; snapped to the nearest frame-locked R/2k. */
 const B2_TARGET_HZ = 7.5;
+/**
+ * Mode B2 contrast is HELD suprathreshold for the amblyopic eye — clamp(1.5 × latest OD
+ * threshold at this frequency, 0.12, 0.85), default 0.25 with no OD history — so the
+ * flickering stimulus is never invisible to OD while the fellow eye keeps answering. The
+ * staircased variable in B2 is therefore the tilt from vertical, not the contrast.
+ */
+const B2_CONTRAST_FACTOR = 1.5;
+const B2_CONTRAST_MIN = 0.12;
+const B2_CONTRAST_MAX = 0.85;
+const B2_CONTRAST_DEFAULT = 0.25;
+const B2_TILT_START = 30;
+const B2_TILT_MIN = 1;
+const B2_TILT_MAX = 45;
 import { cpdToCyclesPerPx, degToPx, isRenderable, pxToDeg } from "../core/visualAngle";
-import { levelProgress, trialXp } from "../core/progression";
+import { levelProgress, tiltTrialXp, trialXp } from "../core/progression";
 import { isWaveBoundary, SHIELD_MAX, waveBonus, waveIndex, WAVE_BREAK_MS } from "../core/waves";
 import { GaborRenderer, type GaborParams } from "../render/gaborRenderer";
 import { FxLayer } from "../render/fxLayer";
@@ -120,6 +133,8 @@ interface LiveState {
   breakUntil: number | null;
   /** Mode B2: frame-locked counterphase schedule; null in Mode A. */
   flicker: FrameLockedRate | null;
+  /** Mode B2: the held (OD-anchored) contrast; null in Mode A. */
+  b2Contrast: number | null;
   /** Monotonic loop frame counter (drives flicker polarity — never wall-clock). */
   frameIdx: number;
   lastFrameAt: number | null;
@@ -130,6 +145,8 @@ interface LiveState {
     gabor: GaborParams;
     isCatch: boolean;
     thetaSign: 1 | -1;
+    /** Unsigned tilt magnitude in degrees (45 in Mode A; the staircased Δθ in Mode B2). */
+    tiltDeg: number;
     eccDeg: number;
     /** Which interleaved staircase drives this trial; null on catch trials. */
     stair: number | null;
@@ -184,11 +201,21 @@ export function SignalHunter() {
     const plan = s.tutorial ? TUTORIAL_PLAN[s.tutCount] : undefined;
     const isCatch = s.tutorial ? false : Math.random() < CATCH_RATE;
     const stair = s.tutorial || isCatch ? null : s.stairs.pick();
+    // Mode A staircases contrast at ±45°; Mode B2 holds contrast (OD-anchored) and
+    // staircases the tilt from vertical instead.
+    const b2 = s.flicker !== null && s.b2Contrast !== null;
     const contrast = s.tutorial
       ? TUTORIAL_CONTRAST
-      : stair === null
-        ? CATCH_CONTRAST
-        : s.stairs.stairs[stair]!.value;
+      : b2
+        ? s.b2Contrast!
+        : stair === null
+          ? CATCH_CONTRAST
+          : s.stairs.stairs[stair]!.value;
+    const tiltDeg = b2 && !s.tutorial
+      ? stair === null
+        ? B2_TILT_START
+        : s.stairs.stairs[stair]!.value
+      : 45;
     const thetaSign: 1 | -1 = plan ? plan.tilt : Math.random() < 0.5 ? 1 : -1;
     const sigmaPx = degToPx(1 / s.cpd, s.profile); // sigma = one wavelength
     const margin = sigmaPx * 4 + 10;
@@ -224,12 +251,13 @@ export function SignalHunter() {
         yPx,
         sigmaPx,
         cyclesPerPx: cpdToCyclesPerPx(s.cpd, s.profile),
-        thetaRad: (thetaSign * Math.PI) / 4,
+        thetaRad: (thetaSign * tiltDeg * Math.PI) / 180,
         phaseRad: Math.random() * 2 * Math.PI,
         contrast,
       },
       isCatch,
       thetaSign,
+      tiltDeg,
       eccDeg,
       stair,
       tStart: performance.now(),
@@ -309,14 +337,18 @@ export function SignalHunter() {
         s.sfx.miss();
       }
     }
-    s.xp += trialXp(c.gabor.contrast, correct, c.isCatch);
+    s.xp += s.flicker
+      ? tiltTrialXp(c.tiltDeg, correct, c.isCatch)
+      : trialXp(c.gabor.contrast, correct, c.isCatch);
     s.trialLog.push({
       index: s.trialLog.length,
-      value: c.gabor.contrast,
+      // Staircased variable: contrast in Mode A, tilt (deg from vertical) in Mode B2.
+      value: s.flicker ? c.tiltDeg : c.gabor.contrast,
       correct,
       rtMs,
       isCatch: c.isCatch,
-      thetaDeg: c.thetaSign * 45,
+      thetaDeg: c.thetaSign * c.tiltDeg,
+      targetContrast: s.flicker ? c.gabor.contrast : undefined,
       xPx: Math.round(c.gabor.xPx),
       yPx: Math.round(c.gabor.yPx),
       eccDeg: Math.round(c.eccDeg * 100) / 100,
@@ -384,7 +416,8 @@ export function SignalHunter() {
       return Math.pow(10, meanLog);
     })();
     const threshold = s.stairs.combinedThreshold ?? fallback;
-    const logCS = threshold !== null ? -Math.log10(threshold) : null;
+    // logCS only means something for a contrast threshold; B2's threshold is a tilt.
+    const logCS = threshold !== null && !s.flicker ? -Math.log10(threshold) : null;
 
     const sessionId = await db.sessions.add({
       profileId: s.profile.id!,
@@ -398,6 +431,7 @@ export function SignalHunter() {
         sigmaDeg: 1 / s.cpd,
         plannedTrials: s.plannedTrials,
         flickerHz: s.flicker?.rateHz,
+        b2Contrast: s.b2Contrast ?? undefined,
       },
       threshold: threshold ?? undefined,
       thresholds: s.stairs.thresholds,
@@ -478,11 +512,45 @@ export function SignalHunter() {
       maxReversals: 8,
       thresholdReversals: 6,
     };
+    // Mode B2: anchor the held contrast to the latest Mode-A OD threshold at this cpd and
+    // run the two tracks as TILT staircases (deg from vertical, log steps).
+    let b2Contrast: number | null = null;
+    if (flickerB2) {
+      const odSessions = (await db.sessions.toArray())
+        .filter(
+          (row) =>
+            row.game === "signal-hunter" &&
+            row.mode !== "B2-flicker" &&
+            (row.eyeCondition ?? "OD") === "OD" &&
+            row.params.cpd === cpd &&
+            row.threshold !== undefined,
+        )
+        .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+      const latest = odSessions[odSessions.length - 1]?.threshold;
+      b2Contrast =
+        latest === undefined
+          ? B2_CONTRAST_DEFAULT
+          : Math.min(B2_CONTRAST_MAX, Math.max(B2_CONTRAST_MIN, B2_CONTRAST_FACTOR * latest));
+    }
+    const tiltCfg = {
+      startValue: B2_TILT_START,
+      minValue: B2_TILT_MIN,
+      maxValue: B2_TILT_MAX,
+      stepLogInitial: 0.25,
+      stepLogFinal: 0.08,
+      reversalsToShrink: 2,
+      maxReversals: 8,
+      thresholdReversals: 6,
+    };
     const s: LiveState = {
-      stairs: new InterleavedStaircases([
-        { ...stairCfg, startValue: 0.4 },
-        { ...stairCfg, startValue: 0.25 },
-      ]),
+      stairs: new InterleavedStaircases(
+        flickerB2
+          ? [tiltCfg, tiltCfg]
+          : [
+              { ...stairCfg, startValue: 0.4 },
+              { ...stairCfg, startValue: 0.25 },
+            ],
+      ),
       renderer,
       fx,
       sfx,
@@ -507,6 +575,7 @@ export function SignalHunter() {
       breaksTaken: fatigueBreaksDue(minutesBefore),
       breakUntil: null,
       flicker: flickerB2 ? nearestFrameLockedRate(B2_TARGET_HZ, profile.refreshRateHz) : null,
+      b2Contrast,
       frameIdx: 0,
       lastFrameAt: null,
       totalFrames: 0,
@@ -699,7 +768,10 @@ export function SignalHunter() {
                     if (e.currentTarget.checked) setEye("OU");
                   }} />{" "}
                 <strong>Mode B2</strong> — counterphase flicker at ~{B2_TARGET_HZ} Hz, both eyes
-                open, no patch <span class="muted">(experimental anti-suppression mode)</span>
+                open, no patch <span class="muted">(experimental anti-suppression mode: contrast
+                is held at 1.5× your latest OD threshold so the amblyopic eye always sees the
+                flicker; the staircase runs on the stripes' TILT from vertical instead — lean
+                left or right, same keys)</span>
               </label>
               {flickerB2 && eye !== "OU" && (
                 <p class="warn">Mode B2 is a binocular mode — select OU in the check below.</p>

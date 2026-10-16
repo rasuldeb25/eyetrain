@@ -50,6 +50,8 @@ export interface SessionRow {
     flankerFactor?: number;
     /** Mode B2: frame-locked counterphase flicker rate actually used (Hz). */
     flickerHz?: number;
+    /** Mode B2: the held, OD-anchored contrast (the staircase ran on tilt). */
+    b2Contrast?: number;
   };
   /** Combined staircase threshold (Michelson contrast), if the run produced one. */
   threshold?: number;
