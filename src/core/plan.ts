@@ -51,6 +51,17 @@ export const PLAN_TEMPLATES: PlanTemplate[] = [
     ],
   },
   {
+    id: "full-rotation",
+    name: "Full rotation (≈36 min)",
+    description: "All three tasks: contrast, crowding, then Vernier hyperacuity.",
+    blocks: [
+      { game: "signal-hunter", cpd: 2, trials: 80, approxMin: 9 },
+      { game: "flanker-run", cpd: 2, trials: 90, approxMin: 11 },
+      { game: "beat-align", cpd: 4, trials: 70, approxMin: 9 },
+      { game: "signal-hunter", cpd: 4, trials: 60, approxMin: 7 },
+    ],
+  },
+  {
     id: "crowding-focus",
     name: "Crowding focus (≈32 min)",
     description: "Two Flanker Run blocks around a contrast block.",
@@ -82,6 +93,7 @@ export function planTotalMinutes(blocks: readonly PlanBlock[]): number {
 
 /** Hash route for a block: the game's route plus preset params. */
 export function blockRoute(block: PlanBlock): string {
-  const base = block.game === "flanker-run" ? "#/flanker" : "#/play";
+  const base =
+    block.game === "flanker-run" ? "#/flanker" : block.game === "beat-align" ? "#/beat-align" : "#/play";
   return `${base}?cpd=${block.cpd}&trials=${block.trials}&plan=1`;
 }

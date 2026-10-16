@@ -8,6 +8,7 @@ import { Dashboard } from "./dashboard";
 import { ClinicalReport } from "./clinicalReport";
 import { ShaderTest } from "./shaderTest";
 import { Session } from "./session";
+import { BeatAlign } from "./beatAlign";
 
 const ROUTES: Record<string, () => JSX.Element> = {
   "#/": Home,
@@ -15,6 +16,7 @@ const ROUTES: Record<string, () => JSX.Element> = {
   "#/session": Session,
   "#/play": SignalHunter,
   "#/flanker": FlankerRun,
+  "#/beat-align": BeatAlign,
   "#/dashboard": Dashboard,
   "#/report": ClinicalReport,
   "#/shader-test": ShaderTest,
@@ -42,6 +44,7 @@ export function App() {
         {link("#/session", "Session")}
         {link("#/play", "Signal Hunter")}
         {link("#/flanker", "Flanker Run")}
+        {link("#/beat-align", "Beat Align")}
         {link("#/dashboard", "Dashboard")}
         {link("#/report", "Report")}
       </nav>

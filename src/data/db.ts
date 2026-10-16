@@ -11,9 +11,16 @@ export interface ProfileRow extends DisplayProfile {
   gamma: number;
   calibratedAt: string; // ISO
   notes?: string;
+  /** Mode B1 fusion diagnostic results (slice 7), when run. */
+  fusionTestedAt?: string;
+  /** Nonius alignment offset needed to fuse, degrees (+x = right panel moved right). */
+  phoriaDegX?: number;
+  phoriaDegY?: number;
+  /** C_OS / C_OD at which both panels stay visible simultaneously (1 = balanced). */
+  dichopticBalanceRatio?: number;
 }
 
-export type GameId = "signal-hunter" | "flanker-run";
+export type GameId = "signal-hunter" | "flanker-run" | "beat-align";
 export type ViewingMode = "A-monocular" | "B1-fusion" | "B2-flicker";
 
 /**

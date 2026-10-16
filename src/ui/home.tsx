@@ -42,9 +42,11 @@ export function Home() {
         <li>Contact lenses in, patch over the <strong>left</strong> eye.</li>
         <li>Same chair/position as calibration; brightness untouched.</li>
         <li>
-          Play <a href="#/play">Signal Hunter</a> (contrast) and{" "}
-          <a href="#/flanker">Flanker Run</a> (crowding) — 30–45 min total, breaks every
-          ~10 min; variety between tasks aids transfer.
+          Play <a href="#/play">Signal Hunter</a> (contrast),{" "}
+          <a href="#/flanker">Flanker Run</a> (crowding) and{" "}
+          <a href="#/beat-align">Beat Align</a> (Vernier hyperacuity) — or let a{" "}
+          <a href="#/session">session plan</a> rotate them; 30–45 min total, variety aids
+          transfer.
         </li>
         <li>Progress and exports for your optometrist: <a href="#/dashboard">Dashboard</a>.</li>
       </ol>

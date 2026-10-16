@@ -11,6 +11,7 @@ import { fitWeibull2AFC, responseBias, type WeibullFit } from "../core/psychomet
 import {
   aulcsf,
   criticalSpacingDeg,
+  crowdingRatio,
   facilitationIndexDb,
   interocularRatio,
   median,
@@ -59,6 +60,13 @@ interface ReportData {
   medianRtMs: number | null;
   bias: { c: number } | null;
   totalSessions: number;
+  vernier: {
+    day: string;
+    cpd: number;
+    uncrowded: number | null;
+    crowded: number | null;
+    vcr: number | null;
+  }[];
 }
 
 /** Group signal-hunter trials by cpd and fit each group with enough data. */
@@ -205,10 +213,27 @@ async function buildReport(): Promise<ReportData> {
     .filter((x) => x.at > now - 2 * WEEK_MS && Math.abs(x.t.thetaDeg) === 45)
     .map((x) => ({ thetaDeg: x.t.thetaDeg, correct: x.t.correct }));
 
+  const vernier = sorted
+    .filter((s) => s.game === "beat-align" && (s.eyeCondition ?? "OD") === "OD")
+    .slice(-4)
+    .reverse()
+    .map((s) => {
+      const un = s.thresholds?.[0] ?? null;
+      const cr = s.thresholds?.[1] ?? null;
+      return {
+        day: s.startedAt.slice(0, 10),
+        cpd: s.params.cpd,
+        uncrowded: un,
+        crowded: cr,
+        vcr: un !== null && cr !== null ? crowdingRatio(cr, un) : null,
+      };
+    });
+
   return {
     profile: profiles[0] ?? null,
     firstDay,
     lastDay,
+    vernier,
     trainingDays,
     weeksSpanned,
     avgDaysPerWeek: trainingDays / weeksSpanned,
@@ -444,6 +469,31 @@ export function ClinicalReport() {
           </tbody>
         </table>
       )}
+      <h2>Hyperacuity &amp; positional uncertainty (Beat Align, OD)</h2>
+      {data.vernier.length === 0 ? (
+        <p class="muted">No Vernier sessions yet.</p>
+      ) : (
+        <table class="rtable">
+          <thead>
+            <tr><th>date</th><th>cpd</th><th>uncrowded Δv</th><th>crowded Δv (2λ)</th><th>VCR</th></tr>
+          </thead>
+          <tbody>
+            {data.vernier.map((v) => (
+              <tr>
+                <td>{v.day}</td>
+                <td>{v.cpd}</td>
+                <td>{v.uncrowded !== null ? `${v.uncrowded.toFixed(2)}′` : "n/c"}</td>
+                <td>{v.crowded !== null ? `${v.crowded.toFixed(2)}′` : "n/c"}</td>
+                <td>{v.vcr !== null ? `${v.vcr.toFixed(2)}×` : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p class="rmeta">
+        Vernier thresholds in arcminutes at 79.4% correct, suprathreshold contrast 0.8.
+        VCR = crowded / uncrowded (≈ 1 = no positional crowding).
+      </p>
       <p class="rmeta">
         FI &gt; 0: collinear flankers at 3λ lowered the detection threshold (facilitation —
         the trained effect). Critical spacing: separation at which flankers begin masking a

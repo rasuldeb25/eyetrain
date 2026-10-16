@@ -6,7 +6,11 @@ import { useState } from "preact/hooks";
 import { advancePlan, blockRoute, currentBlock } from "../core/plan";
 import { loadPlan, readPresets, savePlan } from "./presets";
 
-const GAME_NAMES = { "signal-hunter": "Signal Hunter", "flanker-run": "Flanker Run" } as const;
+const GAME_NAMES = {
+  "signal-hunter": "Signal Hunter",
+  "flanker-run": "Flanker Run",
+  "beat-align": "Beat Align",
+} as const;
 
 export function PlanNav() {
   // Advance exactly once per mount (this done screen = one completed block).

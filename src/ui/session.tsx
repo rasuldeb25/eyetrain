@@ -14,7 +14,11 @@ import {
 } from "../core/plan";
 import { loadPlan, savePlan } from "./presets";
 
-const GAME_NAMES = { "signal-hunter": "Signal Hunter", "flanker-run": "Flanker Run" } as const;
+const GAME_NAMES = {
+  "signal-hunter": "Signal Hunter",
+  "flanker-run": "Flanker Run",
+  "beat-align": "Beat Align",
+} as const;
 
 export function Session() {
   const [active, setActive] = useState(loadPlan());

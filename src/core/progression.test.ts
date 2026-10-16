@@ -9,6 +9,7 @@ import {
   sectorStats,
   sessionMinutes,
   trialXp,
+  vernierTrialXp,
   weekOf,
   xpForLevel,
 } from "./progression";
@@ -33,6 +34,16 @@ describe("trialXp", () => {
 
   it("clamps logCS at 0 for supra-unit contrast values", () => {
     expect(trialXp(1, true, false)).toBe(10);
+  });
+});
+
+describe("vernierTrialXp", () => {
+  it("rewards smaller offsets more, catch trials at base, wrong answers nothing", () => {
+    expect(vernierTrialXp(20, true, false)).toBe(10);
+    expect(vernierTrialXp(2, true, false)).toBe(20);
+    expect(vernierTrialXp(0.2, true, false)).toBe(30);
+    expect(vernierTrialXp(20, true, true)).toBe(10);
+    expect(vernierTrialXp(0.3, false, false)).toBe(0);
   });
 });
 

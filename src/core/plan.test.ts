@@ -35,5 +35,8 @@ describe("session plans", () => {
     expect(blockRoute({ game: "flanker-run", cpd: 2, trials: 90, approxMin: 11 })).toBe(
       "#/flanker?cpd=2&trials=90&plan=1",
     );
+    expect(blockRoute({ game: "beat-align", cpd: 4, trials: 70, approxMin: 9 })).toBe(
+      "#/beat-align?cpd=4&trials=70&plan=1",
+    );
   });
 });

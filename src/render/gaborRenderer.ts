@@ -80,11 +80,14 @@ void main() {
   float sum = L_sum;
   // Superposition in linear luminance, clamped to the displayable range around mean 0.5.
   float l = 0.5 * (1.0 + clamp(sum, -1.0, 1.0));
-  // Inverse gamma, then dither quantization (TS reference: core/gamma.quantizeWithDither).
+  // Inverse gamma, then TPDF dither: two decorrelated per-pixel, per-frame uniforms give
+  // triangular noise of ±1 LSB before round-to-nearest, so the quantization error's mean
+  // AND variance are independent of the signal (RPDF only fixes the mean). Seeds come from
+  // the renderer's monotonic frame counter, never reset within a session.
   float vf = clamp(255.0 * pow(l, uInvGamma), 0.0, 255.0);
-  float base = floor(vf);
-  float n = hash(gl_FragCoord.xy + vec2(uSeed, uSeed * 1.37));
-  float v = ((n < vf - base) ? base + 1.0 : base) / 255.0;
+  float u1 = hash(gl_FragCoord.xy + vec2(uSeed, uSeed * 1.37));
+  float u2 = hash(gl_FragCoord.yx * 1.6180339 + vec2(uSeed * 0.731, -uSeed));
+  float v = clamp(floor(vf + 0.5 + (u1 - u2)), 0.0, 255.0) / 255.0;
   outColor = vec4(v, v, v, 1.0);
 }`;
 

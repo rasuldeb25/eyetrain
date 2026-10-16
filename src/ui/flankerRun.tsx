@@ -57,9 +57,17 @@ const FACILITATION_SPACING = 3;
 const FLANKER_C_FACIL = 0.5;
 /** Track 2: crowding-release constants. */
 const FLANKER_C_CROWD = 0.6;
-const CROWD_TARGET_FACTOR = 2.5;
-const CROWD_TARGET_MIN = 0.15;
-const CROWD_TARGET_MAX = 0.9;
+/**
+ * Crowding-track target = this × the isolated track's current level. 1.5× (was 2.5×) so
+ * the spacing staircase finds the facilitation→masking crossover instead of saturating at
+ * the overlap floor with an over-bright target.
+ */
+const CROWD_TARGET_FACTOR = 1.5;
+const CROWD_TARGET_MIN = 0.12;
+const CROWD_TARGET_MAX = 0.85;
+/** Meridional axes: the collinear configuration is trained across orientation columns. */
+const AXES_DEG = [0, 45, 90, 135] as const;
+type AxisMode = "cycle" | 0 | 45 | 90 | 135;
 const SPACING_START = 6;
 const SPACING_MAX = 8;
 
@@ -100,6 +108,7 @@ interface LiveState {
   sfx: Sfx;
   profile: ProfileRow;
   cpd: number;
+  axisMode: AxisMode;
   plannedTrials: number;
   scoredTrials: number;
   score: number;
@@ -171,6 +180,7 @@ export function FlankerRun() {
   const presets = readPresets();
   const [cpd, setCpd] = useState(presets.cpd ?? 2);
   const [plannedTrials, setPlannedTrials] = useState(presets.trials ?? 90);
+  const [axisMode, setAxisMode] = useState<AxisMode>("cycle");
   const [phase, setPhase] = useState<"setup" | "playing" | "done">("setup");
   const [hud, setHud] = useState({
     score: 0, combo: 0, trial: 0, timeFrac: 1, wave: 1, shield: SHIELD_MAX, stimOn: false,
@@ -197,8 +207,11 @@ export function FlankerRun() {
   function startTrial(s: LiveState) {
     const isCatch = Math.random() < CATCH_RATE;
     const stair = isCatch ? null : s.stairs.pick();
-    const thetaSign: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
-    const thetaRad = (thetaSign * Math.PI) / 4;
+    // Carrier orientation = the meridional axis (cycling per wave, or fixed). In 2IFC the
+    // orientation carries no answer information, so it is free to rotate for training.
+    const axisDeg =
+      s.axisMode === "cycle" ? AXES_DEG[(waveIndex(s.scoredTrials) - 1) % AXES_DEG.length]! : s.axisMode;
+    const thetaRad = (axisDeg * Math.PI) / 180;
     const sigmaPx = degToPx(SIGMA_LAMBDA / s.cpd, s.profile);
     const cyclesPerPx = cpdToCyclesPerPx(s.cpd, s.profile);
     const cx = s.renderer.widthPx / 2;
@@ -509,6 +522,7 @@ export function FlankerRun() {
       sfx,
       profile,
       cpd,
+      axisMode,
       plannedTrials,
       scoredTrials: 0,
       score: 0,
@@ -700,6 +714,18 @@ export function FlankerRun() {
                 {" "}Trials:{" "}
                 <input type="number" min="30" max="240" step="10" value={plannedTrials}
                   onInput={(e) => setPlannedTrials(parseInt(e.currentTarget.value) || 90)} />
+              </label>
+              <label>
+                {" "}Axis:{" "}
+                <select onChange={(e) => {
+                  const v = e.currentTarget.value;
+                  setAxisMode(v === "cycle" ? "cycle" : (parseInt(v, 10) as 0 | 45 | 90 | 135));
+                }}>
+                  <option value="cycle" selected={axisMode === "cycle"}>cycle per wave</option>
+                  {AXES_DEG.map((a) => (
+                    <option value={a} selected={axisMode === a}>{a}°</option>
+                  ))}
+                </select>
               </label>
               <label>
                 {" "}<input type="checkbox" checked={soundOn}

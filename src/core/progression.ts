@@ -34,6 +34,21 @@ export function trialXp(contrast: number, correct: boolean, isCatch: boolean): n
   return Math.round(10 * (1 + logCS));
 }
 
+/** Largest Vernier offset in the staircase range; the XP scale's "easy" reference. */
+export const VERNIER_XP_REF_ARCMIN = 20;
+
+/**
+ * XP for a Vernier (Beat Align) trial: harder (smaller) offsets are worth more, mirroring
+ * trialXp — 10 × (1 + log10(20′ / Δv)) for a correct response, base 10 on catch trials,
+ * nothing when wrong.
+ */
+export function vernierTrialXp(offsetArcmin: number, correct: boolean, isCatch: boolean): number {
+  if (!correct) return 0;
+  if (isCatch) return 10;
+  const difficulty = Math.max(0, Math.log10(VERNIER_XP_REF_ARCMIN / Math.max(offsetArcmin, 1e-3)));
+  return Math.round(10 * (1 + difficulty));
+}
+
 /** Total XP required to REACH level L (L ≥ 1). Level 1 = 0, 2 = 500, 3 = 1500, 4 = 3000… */
 export function xpForLevel(level: number): number {
   if (level < 1) throw new RangeError("level must be ≥ 1");

@@ -335,6 +335,40 @@ banding) → profile saved to IndexedDB.
     with fresh presets. Verified live: plan start → Signal Hunter preset 2 cpd / 80 trials
     → done screen "Next block 2/3: Flanker Run @ 2 cpd →", plan index advanced.
   - 106 unit tests + tsc + build green.
+- **Phase 4 slice 6 (2026-10-16) — Beat Align (Vernier), shader TPDF dither, Flanker
+  refinements** (from the second external directive, with corrections):
+  - **TPDF dither**: the quantizer now adds triangular noise (two decorrelated per-pixel,
+    per-frame hashes, u₁ − u₂, ±1 LSB) before round-to-nearest, so the quantization
+    error's variance — not just its mean — is independent of the signal. Trade-off noted:
+    TPDF carries 2× the noise power of the previous RPDF scheme; per-frame reseeding from
+    the renderer's monotonic frame counter averages it out over the presentation.
+  - *Directive item "render horizontal scanline stripes at physical pixels" in the gamma
+    calibration*: **already the case** since Phase 3 (`y % 4 < k` rows, backing store =
+    CSS × devicePixelRatio, `image-rendering: pixelated`) — no change made.
+  - Flanker Run: crowding-track target multiplier 2.5× → **1.5×** (clamp 0.12–0.85) so the
+    spacing staircase finds the facilitation→masking crossover instead of saturating at the
+    floor; **meridional axis** {0°, 45°, 90°, 135°} cycling per wave (or fixed) so collinear
+    interactions are trained across orientation columns — free in 2IFC, where orientation
+    carries no answer information.
+  - `src/core/vernier.ts` (tested): offsets in arcminutes → degrees → float device pixels;
+    pair geometry (3σ stacked, ±Δv/2 split, sign = shift direction); 2λ distractors. A
+    0.3′ offset is ≈0.24 px on this laptop and the shader's continuous patch centers render
+    it as a genuine sub-pixel luminance shift (renderer logs show centers at e.g. 939 vs
+    924 px — 15 px at 20′ — moving smoothly as the staircase descends).
+  - **Beat Align** (`#/beat-align`, 3rd of the 4 planned games): 2AFC Vernier offset
+    discrimination (bottom bar left/right of the top), fixed contrast 0.8, 350 ms
+    raised-cosine presentation at fixation with the cross extinguished 100 ms before onset,
+    two interleaved staircases — uncrowded and crowded (parallel 0.6-contrast distractors
+    at ±2λ, zero offset) — on Δv from 20′ down to a 0.3′ floor (3-down/1-up, 0.25→0.08
+    log steps, 8 reversals); waves/shield/juice/fatigue/plan-handoff reused; sessions
+    persist both thresholds in arcmin (`threshold` = uncrowded; no logCS — it is not a
+    contrast) and the report gains a **Hyperacuity & positional uncertainty** table with the
+    Vernier crowding ratio (VCR = crowded / uncrowded). Added to Home, the nav, and a new
+    "Full rotation" session template.
+  - **Verified live in Chrome**: renderer scene-start logs show `uCount=2` on uncrowded
+    beats and `uCount=4` on crowded beats (two 0.8 bars + two 0.6 distractors at ±2λ);
+    30-beat set ran to completion with both tracks persisted (see commit for the row).
+    114 unit tests + tsc + build green.
 - **Phase 4 slice 2 verification (2026-10-15)**: 42-trial session driven end-to-end (synthetic
     keys + pointer taps); waves advanced with shield depletion, recap banners and bonuses;
     bursts/pops rendered only during intertrial (screenshots confirm a blank overlay during
